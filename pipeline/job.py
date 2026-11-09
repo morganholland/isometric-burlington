@@ -141,6 +141,51 @@ def run_probe(job, out, log):
     return res
 
 
+def cut_frames(a, frames, outdir, size, log):
+    """Write <x>_<y>.png and .h.png for each frame by cropping the render blocks in R2.
+    A frame can straddle up to four blocks; a block that does not exist stays transparent."""
+    from collections import OrderedDict
+    from PIL import Image
+    import io
+    B = geo.BLOCK
+    outdir.mkdir(parents=True, exist_ok=True)
+    cache = OrderedDict()
+
+    def block(bx, by):
+        k = (bx, by)
+        if k in cache:
+            cache.move_to_end(k); return cache[k]
+        ims = None
+        for i in range(4):
+            try:
+                c = Image.open(io.BytesIO(r2.get_bytes(f"renders/a{a}/{bx}_{by}.png"))); c.load()
+                h = Image.open(io.BytesIO(r2.get_bytes(f"renders/a{a}/{bx}_{by}.h.png"))); h.load()
+                ims = (c.convert("RGBA"), h.convert("RGBA")); break
+            except Exception as e:  # noqa: BLE001
+                if "NoSuchKey" in str(e) or "404" in str(e):
+                    break
+                log.write(f"block {bx},{by} download failed: {e}\n"); time.sleep(5 * (i + 1))
+        cache[k] = ims
+        if len(cache) > 8:
+            cache.popitem(last=False)
+        return ims
+
+    n = 0
+    for x, y in sorted(frames, key=lambda f: (f[1] // B, f[0] // B, f[1], f[0])):
+        col = Image.new("RGBA", (size, size)); hgt = Image.new("RGBA", (size, size))
+        for by in range((y // B) * B, y + size, B):
+            for bx in range((x // B) * B, x + size, B):
+                ims = block(bx, by)
+                if ims is None:
+                    continue
+                box = (max(x, bx) - bx, max(y, by) - by, min(x + size, bx + B) - bx, min(y + size, by + B) - by)
+                at = (max(x, bx) - x, max(y, by) - y)
+                col.paste(ims[0].crop(box), at); hgt.paste(ims[1].crop(box), at)
+        col.save(outdir / f"{x}_{y}.png"); hgt.save(outdir / f"{x}_{y}.h.png")
+        n += 1
+    return n
+
+
 def run_teacher_set(job, out, log):
     """Render sampled frames for one angle and redraw each with the chosen teacher, up to
     `tries` attempts, until a drawing passes every check. Passing pairs go to R2 train/<set>/."""
@@ -152,9 +197,14 @@ def run_teacher_set(job, out, log):
     a, size = job["angle"], 1024
     fr = sample.frames(a, job["frames"], seed=job.get("seed", 1))
     (out / "frames.json").write_text(json.dumps(fr))
-    p = subprocess.run(["node", "pipeline/render/render.mjs", "--angle", str(a), "--frames", str(out / "frames.json"),
-                        "--out", str(out / "renders"), "--size", str(size)], cwd=ROOT, capture_output=True, text=True, timeout=4 * 3600)
-    log.write(p.stdout + p.stderr); log.flush()
+    if job.get("from_blocks", True):
+        # the whole map is already rendered: cut the frames out of the 4096 px blocks in R2
+        n_cut = cut_frames(a, fr, out / "renders", size, log)
+        log.write(f"cut {n_cut} of {len(fr)} frames from render blocks\n"); log.flush()
+    else:
+        p = subprocess.run(["node", "pipeline/render/render.mjs", "--angle", str(a), "--frames", str(out / "frames.json"),
+                            "--out", str(out / "renders"), "--size", str(size)], cwd=ROOT, capture_output=True, text=True, timeout=3 * 3600)
+        log.write(p.stdout + p.stderr); log.flush()
     empties = empty_shares(out / "renders")
     lock = threading.Lock()
     calls = {"n": 0}

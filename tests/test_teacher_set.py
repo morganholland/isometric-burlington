@@ -46,7 +46,7 @@ def setup(monkeypatch, tmp_path, outcomes):
 
 
 def spec(**kw):
-    j = {"name": "ts", "angle": 0, "frames": 6, "model": "m", "look": "builder", "tries": 3, "max_calls": 50, "threads": 2}
+    j = {"name": "ts", "angle": 0, "frames": 6, "from_blocks": False, "model": "m", "look": "builder", "tries": 3, "max_calls": 50, "threads": 2}
     j.update(kw); return j
 
 
@@ -187,3 +187,24 @@ def test_openai_caps_long_retry_after(monkeypatch):
     teacher, sleeps, _ = _fake_requests(monkeypatch, [(429, "rate limit", {"retry-after": "3600"}), (200, "", {})])
     teacher.call_openai("m", b"png", "p")
     assert sleeps and sleeps[0] <= 310
+
+
+def test_cut_frames_spans_blocks_and_leaves_missing_blocks_clear(monkeypatch, tmp_path):
+    import io, job
+    B = job.geo.BLOCK
+    blocks = {}
+    for bx, by, colour in ((0, 0, (255, 0, 0)), (B, 0, (0, 255, 0))):          # (0, B) and (B, B) do not exist
+        for suf, c in ((".png", colour), (".h.png", (0, 78, 32))):
+            b = io.BytesIO(); Image.new("RGBA", (B, B), c + (255,)).save(b, "PNG"); blocks[f"renders/a0/{bx}_{by}{suf}"] = b.getvalue()
+
+    def get(k):
+        if k not in blocks:
+            raise KeyError("NoSuchKey")
+        return blocks[k]
+    monkeypatch.setattr(job, "r2", types.SimpleNamespace(get_bytes=get))
+    x, y = B - 512, B - 256                                       # straddles all four blocks
+    assert job.cut_frames(0, [[x, y]], tmp_path, 1024, open(tmp_path / "log", "w")) == 1
+    im = Image.open(tmp_path / f"{x}_{y}.png")
+    assert im.getpixel((0, 0)) == (255, 0, 0, 255) and im.getpixel((1023, 0)) == (0, 255, 0, 255)
+    assert im.getpixel((0, 1023))[3] == 0 and im.getpixel((1023, 1023))[3] == 0
+    assert abs(job.empty_shares(tmp_path)[f"{x}_{y}"] - 0.75) < 0.01
