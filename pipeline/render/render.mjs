@@ -10,7 +10,7 @@ import { fileURLToPath } from 'node:url';
 const HERE = path.dirname(fileURLToPath(import.meta.url));
 const ROOT = path.resolve(HERE, '../..');
 
-export async function openRenderer({ token, gpu = process.env.RENDER_GPU === '1', errorTarget } = {}) {
+export async function openRenderer({ token, gpu = process.env.RENDER_GPU === '1', errorTarget, warmup = true } = {}) {
   const args = gpu
     ? ['--use-angle=vulkan', '--enable-features=Vulkan', '--ignore-gpu-blocklist', '--enable-gpu-rasterization']
     : ['--use-angle=swiftshader', '--enable-unsafe-swiftshader', '--ignore-gpu-blocklist'];
@@ -28,7 +28,7 @@ export async function openRenderer({ token, gpu = process.env.RENDER_GPU === '1'
   await page.waitForFunction(() => typeof window.setup === 'function');
   const cfg = JSON.parse(fs.readFileSync(path.join(ROOT, 'data/grid.json')));
   delete cfg.angles; // the page only needs the camera constants
-  await page.evaluate(([c, t, o]) => window.setup(c, t, o), [cfg, token, { errorTarget }]);
+  await page.evaluate(([c, t, o]) => window.setup(c, t, o), [cfg, token, { errorTarget, warmup }]);
   return { browser, page };
 }
 
@@ -46,16 +46,22 @@ async function main() {
   const frames = JSON.parse(fs.readFileSync(argv.frames));
   const out = argv.out; fs.mkdirSync(out, { recursive: true });
   const { browser, page } = await openRenderer({ token, errorTarget: argv.errorTarget ? Number(argv.errorTarget) : undefined });
-  for (const [x, y] of frames) {
-    const name = `${x}_${y}`;
-    if (fs.existsSync(path.join(out, `${name}.png`))) continue;
-    const t = Date.now();
-    const r = await shot(page, { angle, x, y, w: size, h: size });
-    if (!r.settle.ok) { console.error(`incomplete ${name}`, r.settle.stats); continue; } // never keep a frame drawn on missing tiles
-    fs.writeFileSync(path.join(out, `${name}.png`), r.rgb);
-    fs.writeFileSync(path.join(out, `${name}.h.png`), r.height);
-    fs.writeFileSync(path.join(out, `${name}.json`), JSON.stringify({ seconds: (Date.now() - t) / 1000, settle: r.settle, attribution: r.attribution }));
-    console.log(`${name} ${((Date.now() - t) / 1000).toFixed(1)}s`);
+  // one pass over every frame, then one retry pass over frames that did not fully load
+  let todo = frames;
+  for (let pass = 0; pass < 2 && todo.length; pass++) {
+    const failed = [];
+    for (const [x, y] of todo) {
+      const name = `${x}_${y}`;
+      if (fs.existsSync(path.join(out, `${name}.png`))) continue;
+      const t = Date.now();
+      const r = await shot(page, { angle, x, y, w: size, h: size });
+      if (!r.settle.ok) { console.error(`incomplete ${name} (pass ${pass + 1})`, JSON.stringify(r.settle.stats)); failed.push([x, y]); continue; } // never keep a frame drawn on missing tiles
+      fs.writeFileSync(path.join(out, `${name}.png`), r.rgb);
+      fs.writeFileSync(path.join(out, `${name}.h.png`), r.height);
+      fs.writeFileSync(path.join(out, `${name}.json`), JSON.stringify({ seconds: (Date.now() - t) / 1000, settle: r.settle, attribution: r.attribution }));
+      console.log(`${name} ${((Date.now() - t) / 1000).toFixed(1)}s`);
+    }
+    todo = failed;
   }
   await browser.close();
 }

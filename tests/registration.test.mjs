@@ -53,7 +53,7 @@ test('inverse transforms round-trip', () => {
 });
 
 test('renderer camera projects ENU points to the same map pixels', async () => {
-  const { browser, page } = await openRenderer({ token: 'none' });
+  const { browser, page } = await openRenderer({ token: 'none', warmup: false });
   try {
     for (let a = 0; a < 4; a++) for (const [, lat, lon, h] of PLACES) {
       const [e, n, u] = llaToEnu(lat, lon, h);

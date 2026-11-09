@@ -98,17 +98,25 @@ def heights(hpng):
     return h
 
 
-def water_mask(h):
-    """Lake Champlain sits near 29-31 m; open water is low and flat."""
-    if h is None:
+LAKE_ENU_M = -0.3   # Lake Champlain in the tiles' ellipsoid heights at the origin (measured, harbour)
+
+
+def lake_level(e, n):
+    """Lake level in the flat ENU frame: the Earth curves away from the tangent plane."""
+    return LAKE_ENU_M - (e * e + n * n) / (2 * 6371000.0)
+
+
+def water_mask(h, level=None):
+    """Open water: within a metre or so of lake level, and flat."""
+    if h is None or level is None:
         return None
-    m = (h > 26) & (h < 32.5)
+    m = (h > level - 1.5) & (h < level + 0.8)
     gy, gx = np.gradient(np.nan_to_num(h))
     flat = np.hypot(gx, gy) < 0.05
     return m & flat
 
 
-def check(render, drawing, hmap=None):
+def check(render, drawing, hmap=None, level=None):
     r = render.convert("RGB"); d = drawing.convert("RGB").resize(r.size, Image.LANCZOS)
     er, ed = _edges(r), _edges(d)
     dy, dx = phase_shift(er, ed)
@@ -125,7 +133,10 @@ def check(render, drawing, hmap=None):
     neon = float(((hsv[..., 1] > 200) & (hsv[..., 2] > 170) & green).mean())
     water = None
     if hmap is not None:
-        wm = water_mask(hmap)
+        wm = water_mask(hmap, level)
+        if wm is not None:
+            rp = np.asarray(r, dtype=np.float32)
+            wm = wm & (rp[..., 2] >= rp[..., 0]) & (rp[..., 2] >= rp[..., 1] - 30)   # water in the render too (no docks, boats)
         if wm is not None and wm.mean() > 0.02:
             px = np.asarray(d, dtype=np.float32)[wm]
             blueish = (px[:, 2] >= px[:, 0] - 5) & (px[:, 2] >= px[:, 1] - 25)

@@ -59,7 +59,8 @@ def run_teacher_test(job, out, log):
     spots = job["spots"]
     frames = []
     for s in spots:
-        e, n, u = geo.lla_to_enu(s["lat"], s["lon"], s.get("h", 35.0))
+        e, n, u = geo.lla_to_enu(s["lat"], s["lon"], s.get("h", 5.0))
+        s["lake_level"] = teacher.lake_level(float(e), float(n))
         x, y = geo.enu_to_px(job.get("angle", 0), float(e), float(n), float(u))
         s["frame"] = [int(round((x - size / 2) / 64)) * 64, int(round((y - size / 2) / 64)) * 64]
         frames.append(s["frame"])
@@ -94,7 +95,7 @@ def run_teacher_test(job, out, log):
         fn = f"{s['id']}__{model}__{look}.png"
         (out / "drawn" / fn).write_bytes(img)
         hm = teacher.heights(str(out / "renders" / f"{name}.h.png"))
-        chk = teacher.check(rgb, Image.open(io.BytesIO(img)), hm)
+        chk = teacher.check(rgb, Image.open(io.BytesIO(img)), hm, s["lake_level"])
         usage.append(u)
         return {"spot": s["id"], "model": model, "look": look, "file": fn, "check": chk, "usage": u}
 

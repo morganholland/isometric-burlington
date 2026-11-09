@@ -97,6 +97,16 @@ window.setup = async function (config, token, opts = {}) {
   tiles.group.matrixWorldNeedsUpdate = true;
   scene.add(tiles.group);
   heightMat = makeHeightMaterial();
+  if (opts.warmup !== false) {
+  // warm up: wait until the Google tileset root has loaded, so the first frame is not drawn on nothing
+  const warm = new THREE.OrthographicCamera(-500, 500, 500, -500, 1, 40000);
+  warm.position.set(0, 20000, 0); warm.lookAt(0, 0, 0); warm.updateMatrixWorld(true);
+  tiles.setCamera(warm); tiles.setResolution(warm, 512, 512);
+  const t0 = performance.now();
+  while (!tiles.root && performance.now() - t0 < 120000) { tiles.update(); await new Promise(r => setTimeout(r, 100)); }
+  tiles.deleteCamera(warm);
+  if (!tiles.root) throw new Error('Google 3D tileset did not load within 120 s');
+  }
   window.__attrib = () => tiles.getAttributions ? tiles.getAttributions().map(a => a.value).join(' | ') : '';
   return true;
 };
