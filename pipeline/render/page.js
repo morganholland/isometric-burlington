@@ -86,8 +86,9 @@ window.setup = async function (config, token, opts = {}) {
   tiles.registerPlugin(new CesiumIonAuthPlugin({ apiToken: token, assetId: GOOGLE_3D_TILES_ASSET, autoRefreshToken: true }));
   tiles.registerPlugin(new GLTFExtensionsPlugin({}));
   tiles.addEventListener('load-tileset', () => { tiles.errorTarget = opts.errorTarget ?? 4; });
-  tiles.lruCache.minSize = 3000; tiles.lruCache.maxSize = 6000;
-  tiles.lruCache.maxBytesSize = 1.2e9; tiles.lruCache.minBytesSize = 0.6e9;
+  tiles.lruCache.minSize = 4000; tiles.lruCache.maxSize = 20000;
+  tiles.lruCache.minBytesSize = 1.5e9; tiles.lruCache.maxBytesSize = 4e9;
+  tiles.lruCache.unloadPercent = 0.25;
   tiles.downloadQueue.maxJobs = opts.downloads ?? 24;
   tiles.parseQueue.maxJobs = 4;
   enuFromEcef = enuMatrix(cfg.origin[0], cfg.origin[1], cfg.origin[2]);
@@ -105,17 +106,20 @@ async function settle(cam, w, h, timeoutMs) {
   tiles.setCamera(cam);
   tiles.setResolution(cam, w, h);
   const t0 = performance.now();
-  let quiet = 0;
+  let quiet = 0, iters = 0;
   while (performance.now() - t0 < timeoutMs) {
     cam.updateMatrixWorld();
     tiles.update();
+    iters++;
     const s = tiles.stats;
-    const busy = s.queued + s.downloading + s.parsing;
-    if (busy === 0 && tiles.root) { quiet++; if (quiet >= 6) return { ok: true, ms: performance.now() - t0, stats: { ...s } }; }
+    // settled = the tileset is loaded, this view uses tiles, nothing is queued, loading or
+    // refused by a full cache, for 10 updates in a row (and never before 20 updates)
+    const busy = s.queued + s.downloading + s.parsing + s.refused;
+    if (busy === 0 && tiles.root && s.visible > 0 && iters >= 20) { quiet++; if (quiet >= 10) return { ok: true, ms: performance.now() - t0, iters, stats: { ...s } }; }
     else quiet = 0;
     await new Promise(r => setTimeout(r, busy ? 60 : 30));
   }
-  return { ok: false, ms: performance.now() - t0, stats: { ...tiles.stats } };
+  return { ok: false, ms: performance.now() - t0, iters, stats: { ...tiles.stats } };
 }
 
 window.renderShot = async function ({ angle, x, y, w, h, timeoutMs = 240000, wantHeight = true }) {

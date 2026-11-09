@@ -1,0 +1,15 @@
+{"type": "teacher_test", "name": "style-test-1", "angle": 0,
+ "models": ["gpt-image-2.6-flare", "gpt-image-2.6-sunburst"],
+ "looks": ["builder", "gouache"],
+ "spots": [
+  {"id": "church-st", "label": "Church Street Marketplace", "lat": 44.4772, "lon": -73.2127, "h": 60},
+  {"id": "waterfront", "label": "Waterfront, ECHO and the ferry dock", "lat": 44.4752, "lon": -73.2205, "h": 31},
+  {"id": "uvm", "label": "UVM green and the Old Mill", "lat": 44.4787, "lon": -73.1985, "h": 110},
+  {"id": "old-north-end", "label": "Old North End houses", "lat": 44.4860, "lon": -73.2155, "h": 55},
+  {"id": "north-beach", "label": "North Beach and the bike path", "lat": 44.4905, "lon": -73.2380, "h": 31},
+  {"id": "winooski", "label": "Winooski roundabout and the falls", "lat": 44.4905, "lon": -73.1860, "h": 60},
+  {"id": "btv", "label": "BTV airport terminal", "lat": 44.4716, "lon": -73.1533, "h": 100},
+  {"id": "red-rocks", "label": "Red Rocks Park and the shore", "lat": 44.4430, "lon": -73.2250, "h": 50},
+  {"id": "dorset-st", "label": "Dorset Street and University Mall", "lat": 44.4655, "lon": -73.1770, "h": 105},
+  {"id": "oakledge", "label": "Oakledge Park", "lat": 44.4555, "lon": -73.2265, "h": 35}
+ ]}

@@ -32,7 +32,78 @@ def run_render(job, out, log):
     log.write(p.stdout + p.stderr)
     if p.returncode:
         raise RuntimeError(f"render exited {p.returncode}")
-    return {"frames": len(frames), "rendered": len(list((out / "frames").glob("*_*.png"))) // 2}
+    return {"frames": len(frames), "rendered": len([p for p in (out / "frames").glob("*_*.png") if not p.name.endswith(".h.png")]),
+            "empty_share": empty_shares(out / "frames")}
+
+
+def empty_shares(d):
+    """Share of fully transparent pixels per frame: inside the map area it should be ~0."""
+    import numpy as np
+    from PIL import Image
+    res = {}
+    for p in sorted(Path(d).glob("*_*.png")):
+        if p.name.endswith(".h.png"):
+            continue
+        a = np.asarray(Image.open(p).getchannel("A"))
+        res[p.stem] = round(float((a == 0).mean()), 4)
+    return res
+
+
+def run_teacher_test(job, out, log):
+    """Render named spots, redraw each with every (model, look), check every drawing."""
+    from concurrent.futures import ThreadPoolExecutor
+    from PIL import Image
+    import io
+    import teacher
+    size = 1024
+    spots = job["spots"]
+    frames = []
+    for s in spots:
+        e, n, u = geo.lla_to_enu(s["lat"], s["lon"], s.get("h", 35.0))
+        x, y = geo.enu_to_px(job.get("angle", 0), float(e), float(n), float(u))
+        s["frame"] = [int(round((x - size / 2) / 64)) * 64, int(round((y - size / 2) / 64)) * 64]
+        frames.append(s["frame"])
+    (out / "frames.json").write_text(json.dumps(frames))
+    p = subprocess.run(["node", "pipeline/render/render.mjs", "--angle", str(job.get("angle", 0)), "--frames", str(out / "frames.json"),
+                        "--out", str(out / "renders"), "--size", str(size)], cwd=ROOT, capture_output=True, text=True, timeout=3600)
+    log.write(p.stdout + p.stderr)
+    tasks = []
+    empties = empty_shares(out / "renders")
+    for s in spots:
+        name = f"{s['frame'][0]}_{s['frame'][1]}"
+        if not (out / "renders" / f"{name}.png").exists():
+            s["error"] = "render incomplete"; continue
+        s["empty"] = empties.get(name)
+        if s["empty"] is None or s["empty"] > 0.02:   # never pay to redraw a render with holes
+            s["error"] = f"render has holes ({s['empty']})"; continue
+        for model in job["models"]:
+            for look in job["looks"]:
+                tasks.append((s, name, model, look))
+    (out / "drawn").mkdir(exist_ok=True)
+    usage = []
+
+    def one(t):
+        s, name, model, look = t
+        rgba = Image.open(out / "renders" / f"{name}.png")
+        rgb = Image.new("RGB", rgba.size, (0, 0, 0)); rgb.paste(rgba, mask=rgba.getchannel("A"))
+        buf = io.BytesIO(); rgb.save(buf, "PNG")
+        try:
+            img, u = teacher.call_openai(model, buf.getvalue(), teacher.STYLES[look])
+        except Exception as e:  # noqa: BLE001
+            return {"spot": s["id"], "model": model, "look": look, "error": str(e)[:300]}
+        fn = f"{s['id']}__{model}__{look}.png"
+        (out / "drawn" / fn).write_bytes(img)
+        hm = teacher.heights(str(out / "renders" / f"{name}.h.png"))
+        chk = teacher.check(rgb, Image.open(io.BytesIO(img)), hm)
+        usage.append(u)
+        return {"spot": s["id"], "model": model, "look": look, "file": fn, "check": chk, "usage": u}
+
+    with ThreadPoolExecutor(4) as ex:
+        results = list(ex.map(one, tasks))
+    (out / "results.json").write_text(json.dumps({"spots": spots, "results": results}, indent=1))
+    ok = sum(1 for r in results if r.get("check", {}).get("pass"))
+    return {"calls": len(tasks), "drawn": sum(1 for r in results if "file" in r), "passed_checks": ok,
+            "errors": [r["error"] for r in results if "error" in r][:5]}
 
 
 def run_probe(job, out, log):
@@ -77,7 +148,7 @@ def main(path):
     r2.put_json(f"runs/{name}/status.json", status)
     log = open(out / "log.txt", "w")
     try:
-        result = {"render": run_render, "probe": run_probe}[job["type"]](job, out, log)
+        result = {"render": run_render, "probe": run_probe, "teacher_test": run_teacher_test}[job["type"]](job, out, log)
         status.update(state="done", result=result)
     except Exception:
         status.update(state="failed", error=traceback.format_exc()[-3000:])
