@@ -12,10 +12,10 @@ LOOKS = {"builder": "City-builder", "gouache": "Storybook gouache"}
 MODELS = {"gpt-image-2.6-flare": "2.6 flare", "gpt-image-2.6-sunburst": "2.6 sunburst"}
 
 
-def uri(path, size=1024):
+def uri(path, size=800):
     im = Image.open(path).convert("RGB")
     im.thumbnail((size, size), Image.LANCZOS)
-    b = io.BytesIO(); im.save(b, "WEBP", quality=78)
+    b = io.BytesIO(); im.save(b, "WEBP", quality=72)
     return "data:image/webp;base64," + base64.b64encode(b.getvalue()).decode()
 
 
