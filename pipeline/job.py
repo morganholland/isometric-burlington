@@ -2,7 +2,7 @@
 
 {"type": "render", "name": "render-test-1", "angle": 0, "centers": [[44.4759, -73.2121]], "n": 2, "size": 1024}
 """
-import json, os, random, subprocess, sys, time, traceback
+import base64, json, os, random, subprocess, sys, time, traceback
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).parent))
@@ -469,20 +469,15 @@ meta: {{name: "{name}", version: "1"}}
 
 # how long a machine may sit in each state before we give up on it (minutes)
 STALL = {"starting": 25, "booted": 15, "downloading data": 30, "training": None}
+DRAW_STALL = {"starting": 25, "booted": 15, "loading model": 30, "drawing": 30}
 
 
-def run_train(job, out, log):
-    """Rent one H100 on Vast.ai, train the LoRA there, always delete the machine."""
-    import base64, secrets
+def rent_and_run(job, log, name, script, env_extra, stall, max_hours):
+    """Rent a GPU, run pipeline/remote/<script> on it, follow its box.json, always delete it.
+    Returns (final box state, estimated $ spent)."""
+    import secrets
     import vast
-    name = job["name"]
-    man = [json.loads(r2.get_bytes(f"{p}/manifest.json")) for p in job["pairs"]]
-    val = [f"a{m['angle']}_{it['id']}" for m in man for it in m["items"] if it.get("ok") and it["split"] == "val"]
-    val_ids = val[::max(1, len(val) // 4)][:4]
-    yaml = train_yaml(name, job.get("steps", 3000), job.get("rank", 32), val_ids)
-    (out / "train.yaml").write_text(yaml)
     credit = vast.credit()
-    max_hours = job.get("max_hours", 3.5)
     cutoff = JOB_START + 330 * 60          # stay well inside the 355-minute GitHub timeout
     log.write(f"vast credit ${credit}\n"); log.flush()
     sha = os.environ.get("GITHUB_SHA", "main")
@@ -494,7 +489,7 @@ def run_train(job, out, log):
     for attempt in range(job.get("max_machines", 2)):
         offs = [o for o in vast.offers(job.get("max_dph", 3.2)) if o["id"] not in tried]
         if not offs:
-            raise RuntimeError("no H100 offers under the price cap")
+            raise RuntimeError("no GPU offers under the price cap")
         o = offs[0]; tried.append(o["id"])
         deadline = int(min(time.time() + max_hours * 3600, cutoff))
         if credit - spent < o["dph_total"] * (deadline - time.time()) / 3600:
@@ -503,16 +498,16 @@ def run_train(job, out, log):
         label = f"iso-{name}-dl{deadline}"
         onstart = ("rm -rf /root/iso && cd /root && git clone -q https://github.com/morganholland/isometric-burlington iso && "
                    f"cd iso && git checkout -q {sha} && cp pipeline/remote/sync.py /root/sync.py && "
-                   'echo "$TRAIN_YAML_B64" | base64 -d > /root/train.yaml && echo "$CAPTION_B64" | base64 -d > /root/caption.txt && '
-                   "nohup bash pipeline/remote/train.sh > /root/onstart.log 2>&1 &")
-        env = {"RUN": name, "ATTEMPT": token, "PAIRS": ",".join(job["pairs"]), "AITK_OUTPUT": "/root/output",
-               "TRAIN_YAML_B64": base64.b64encode(yaml.encode()).decode(),
+                   'echo "$CAPTION_B64" | base64 -d > /root/caption.txt && '
+                   '{ [ -z "${TRAIN_YAML_B64:-}" ] || echo "$TRAIN_YAML_B64" | base64 -d > /root/train.yaml; } && '
+                   f"nohup bash pipeline/remote/{script} > /root/onstart.log 2>&1 &")
+        env = {"RUN": name, "ATTEMPT": token, "AITK_OUTPUT": "/root/output",
                "CAPTION_B64": base64.b64encode(CAPTION.encode()).decode(),
                "R2_ENDPOINT": os.environ["R2_ENDPOINT"], "R2_ACCESS_KEY_ID": os.environ["R2_ACCESS_KEY_ID"],
-               "R2_SECRET_ACCESS_KEY": os.environ["R2_SECRET_ACCESS_KEY"]}
+               "R2_SECRET_ACCESS_KEY": os.environ["R2_SECRET_ACCESS_KEY"], **env_extra}
         t0 = time.time()
         iid = None
-        state, since, reached_running = "starting", time.time(), False
+        state, since, reached_running, detail = "starting", time.time(), False, ""
         try:
             try:
                 iid = vast.create(o["id"], label, onstart, env)
@@ -535,17 +530,22 @@ def run_train(job, out, log):
                         reached_running = inst.get("actual_status") == "running"
                     except Exception:  # noqa: BLE001
                         pass
-                if box.get("attempt") == token and box.get("state") != state:
-                    state, since = box.get("state"), time.time()
-                    say(f"{int((time.time()-t0)/60)} min: {state} {box.get('detail','')}")
+                if box.get("attempt") == token and (box.get("state"), box.get("detail", "")) != (state, detail):
+                    if box.get("state") != state:
+                        since = time.time()
+                    elif stall.get(state) and box.get("detail", "") != detail:
+                        since = time.time()              # progress inside a state (a new block drawn) resets its clock
+                    state, detail = box.get("state"), box.get("detail", "")
+                    say(f"{int((time.time()-t0)/60)} min: {state} {detail}")
                     try:
-                        r2.put_json(f"runs/{name}/status.json", {"name": name, "type": "train", "state": "running", "box": state,
-                                                                 "machine": iid, "dph": o["dph_total"], "minutes": round((time.time()-t0)/60, 1)})
+                        r2.put_json(f"runs/{name}/status.json", {"name": name, "type": job["type"], "state": "running", "box": state,
+                                                                 "detail": detail, "machine": iid, "dph": o["dph_total"],
+                                                                 "minutes": round((time.time()-t0)/60, 1)})
                     except Exception as e:  # noqa: BLE001
                         say(f"status write failed: {e}")
                 if state in ("done", "failed", "refused"):
                     break
-                limit = STALL.get(state, 30)
+                limit = stall.get(state, 30)
                 if limit and time.time() - since > limit * 60:
                     say(f"stalled in '{state}' for {limit} min"); state = f"stalled:{state}"; break
             else:
@@ -565,9 +565,36 @@ def run_train(job, out, log):
             continue
         result = state
         break
+    return result, spent
+
+
+def run_train(job, out, log):
+    """Rent one GPU on Vast.ai, train the LoRA there, always delete the machine."""
+    name = job["name"]
+    man = [json.loads(r2.get_bytes(f"{p}/manifest.json")) for p in job["pairs"]]
+    val = [f"a{m['angle']}_{it['id']}" for m in man for it in m["items"] if it.get("ok") and it["split"] == "val"]
+    val_ids = val[::max(1, len(val) // 4)][:4]
+    yaml = train_yaml(name, job.get("steps", 3000), job.get("rank", 32), val_ids)
+    (out / "train.yaml").write_text(yaml)
+    env = {"PAIRS": ",".join(job["pairs"]), "TRAIN_YAML_B64": base64.b64encode(yaml.encode()).decode()}
+    result, spent = rent_and_run(job, log, name, "train.sh", env, STALL, job.get("max_hours", 3.5))
     if result != "done":
         raise RuntimeError(f"training ended: {result}; Vast spend ~${spent:.2f}")
     return {"state": result, "vast_spent_estimate": round(spent, 2), "val": val_ids}
+
+
+def run_draw(job, out, log):
+    """Rent one GPU, draw blocks with the trained LoRA (joint-sampled, resumable), always delete it.
+    {"type": "draw", "name": "draw-a0", "lora": "runs/train-lora3/out/train-lora3/train-lora3_000002500.safetensors",
+     "angles": [0], "blocks": "", "limit": 0, "max_hours": 5}"""
+    name = job["name"]
+    env = {"LORA_KEY": job["lora"], "ANGLES": ",".join(str(a) for a in job["angles"]),
+           "BLOCKS": job.get("blocks", ""), "LIMIT": str(job.get("limit", 0)),
+           "DRAW_RUN": job.get("draw_run", name), "STRIDE": str(job.get("stride", 48))}
+    result, spent = rent_and_run(job, log, name, "draw.sh", env, DRAW_STALL, job.get("max_hours", 5))
+    if result != "done":
+        raise RuntimeError(f"drawing ended: {result}; Vast spend ~${spent:.2f}")
+    return {"state": result, "vast_spent_estimate": round(spent, 2)}
 
 
 def main(path):
@@ -580,7 +607,7 @@ def main(path):
     r2.put_json(f"runs/{name}/status.json", status)
     log = open(out / "log.txt", "w")
     try:
-        result = {"render": run_render, "probe": run_probe, "teacher_test": run_teacher_test, "teacher_set": run_teacher_set, "train": run_train, "render_blocks": run_render_blocks, "ls": run_ls}[job["type"]](job, out, log)
+        result = {"render": run_render, "probe": run_probe, "teacher_test": run_teacher_test, "teacher_set": run_teacher_set, "train": run_train, "render_blocks": run_render_blocks, "ls": run_ls, "draw": run_draw}[job["type"]](job, out, log)
         status.update(state="done", result=result)
     except Exception:
         status.update(state="failed", error=traceback.format_exc()[-3000:])

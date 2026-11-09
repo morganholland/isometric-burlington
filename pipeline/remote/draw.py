@@ -12,7 +12,7 @@ import torch
 import boto3
 from PIL import Image
 
-sys.path.insert(0, "/root/ai-toolkit")
+sys.path.insert(0, os.environ.get("AITK", "/app/ai-toolkit"))
 sys.path.insert(0, str(Path(__file__).parent))
 import sampler as S  # noqa: E402
 
@@ -21,9 +21,20 @@ CAPTION = open("/root/caption.txt").read().strip() if os.path.exists("/root/capt
 BLOCK, LAT = 4096, 16
 MARGIN = 16      # latent cells of neighbour context on each side (256 px)
 SEED = 20261109
+STRIDE = int(os.environ.get("STRIDE", 48))
 
 s3 = boto3.client("s3", endpoint_url=os.environ["R2_ENDPOINT"], aws_access_key_id=os.environ["R2_ACCESS_KEY_ID"],
                   aws_secret_access_key=os.environ["R2_SECRET_ACCESS_KEY"], region_name="auto")
+
+
+def box(state, detail=""):
+    """Progress for the GitHub side, which deletes the machine on done/failed and on a stall."""
+    body = json.dumps({"state": state, "detail": detail, "attempt": os.environ.get("ATTEMPT", ""), "t": time.time()}).encode()
+    for i in range(5):
+        try:
+            s3.put_object(Bucket=BUCKET, Key=f"runs/{os.environ['RUN']}/box.json", Body=body, ContentType="application/json"); return
+        except Exception as e:  # noqa: BLE001
+            print("box write failed", e); time.sleep(3 * (i + 1))
 
 
 def r2_get(key):
@@ -157,7 +168,7 @@ def draw_block(model, run, angle, bx, by, have):
     y0, x0 = by // LAT - MARGIN, bx // LAT - MARGIN
     noise = S.global_noise(C, y0, x0, H, W, SEED + angle, dev)
     wm = WindowModel(model, canvas)
-    x, evals = S.sample_canvas(wm, noise, clean, pw)
+    x, evals = S.sample_canvas(wm, noise, clean, pw, stride=STRIDE)
     block_lat = x[:, MARGIN:H - MARGIN, MARGIN:W - MARGIN].contiguous()
     # decode the block with a little latent context on each side, then crop, so the VAE sees its edges
     ctx = 4
@@ -174,30 +185,36 @@ def draw_block(model, run, angle, bx, by, have):
 
 def main():
     ap = argparse.ArgumentParser()
-    ap.add_argument("--angle", type=int, required=True)
+    ap.add_argument("--angles", required=True)
     ap.add_argument("--lora", required=True)
     ap.add_argument("--blocks", default="")
     ap.add_argument("--limit", type=int, default=0)
     a = ap.parse_args()
-    run = os.environ["RUN"]
-    grid = json.load(open("/root/iso/data/grid.json"))["angles"][a.angle]
-    have = {tuple(b) for b in grid["blocks"]}
-    order = sorted(grid["blocks"], key=lambda b: (b[1], b[0]))          # raster: rows top to bottom
-    if a.blocks:
-        want = {tuple(map(int, s.split("_"))) for s in a.blocks.split(",")}
-        order = [b for b in order if tuple(b) in want]
+    run = os.environ.get("DRAW_RUN") or os.environ["RUN"]
+    grids = json.load(open("/root/iso/data/grid.json"))["angles"]
+    box("loading model")
     model = load_model(a.lora)
-    log = []
     n = 0
-    for bx, by in order:
-        if r2_get(f"latents/{run}/a{a.angle}/{bx}_{by}.pt") is not None:
-            continue
-        r = draw_block(model, run, a.angle, bx, by, have)
-        log.append(r); n += 1
-        print(json.dumps(r), flush=True)
-        s3.put_object(Bucket=BUCKET, Key=f"runs/{run}/draw-a{a.angle}.json", Body=json.dumps(log).encode(), ContentType="application/json")
-        if a.limit and n >= a.limit:
-            break
+    for angle in [int(x) for x in a.angles.split(",")]:
+        grid = grids[angle]
+        have = {tuple(b) for b in grid["blocks"]}
+        order = sorted(grid["blocks"], key=lambda b: (b[1], b[0]))          # raster: rows top to bottom
+        if a.blocks:
+            want = {tuple(map(int, s.split("_"))) for s in a.blocks.split(",")}
+            order = [b for b in order if tuple(b) in want]
+        logkey = f"runs/{os.environ['RUN']}/draw-a{angle}.json"
+        log = json.loads(r2_get(logkey) or b"[]")
+        for i, (bx, by) in enumerate(order):
+            if r2_get(f"latents/{run}/a{angle}/{bx}_{by}.pt") is not None:
+                continue
+            box("drawing", f"a{angle} block {i + 1}/{len(order)} ({bx},{by})")
+            r = draw_block(model, run, angle, bx, by, have)
+            log.append(r); n += 1
+            print(json.dumps(r), flush=True)
+            s3.put_object(Bucket=BUCKET, Key=logkey, Body=json.dumps(log).encode(), ContentType="application/json")
+            if a.limit and n >= a.limit:
+                return
+    box("drawing", f"all {n} blocks drawn")
 
 
 if __name__ == "__main__":

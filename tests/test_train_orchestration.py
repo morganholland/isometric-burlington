@@ -109,3 +109,49 @@ def test_overall_cutoff_respected(monkeypatch, tmp_path):
         job.run_train({"name": "t", "pairs": ["runs/p"], "max_hours": 10}, out, log)
     import job as j
     assert j.time.time() - j.JOB_START <= 331 * 60 + 120
+
+
+def test_draw_uses_the_same_lifecycle(monkeypatch, tmp_path):
+    job, vast, out, log = setup(monkeypatch, tmp_path, [(3, "booted"), (6, "loading model"), (20, "drawing"), (50, "done")])
+    seen = {}
+    orig = vast.create
+    def create(offer, label, onstart, env):
+        seen.update(onstart=onstart, env=env); return orig(offer, label, onstart, env)
+    vast.create = create
+    r = job.run_draw({"type": "draw", "name": "d", "lora": "runs/t/x.safetensors", "angles": [0, 2], "limit": 4}, out, log)
+    assert r["state"] == "done" and vast.destroyed == vast.created == [101]
+    assert "pipeline/remote/draw.sh" in seen["onstart"] and seen["env"]["ANGLES"] == "0,2" and seen["env"]["LIMIT"] == "4"
+    assert "TRAIN_YAML_B64" not in seen["env"]
+
+
+def test_draw_progress_keeps_a_long_run_alive(monkeypatch, tmp_path):
+    # 'drawing' allows 30 quiet minutes; a new block (a detail change) must reset that clock
+    import json as _j
+    job, vast, out, log = setup(monkeypatch, tmp_path, [(3, "booted"), (6, "loading model"), (10, "drawing")])
+    orig = vast.create
+
+    def create(offer, label, onstart, env):
+        iid = orig(offer, label, onstart, env)
+        inner = job.r2.get_bytes
+
+        def get(k):
+            if not k.endswith("box.json"):
+                return inner(k)
+            b = _j.loads(inner(k))
+            if b["state"] == "drawing":
+                b["detail"] = f"block {int(job.time.time() // 1200)}"     # a new block every 20 min
+            if job.time.time() - job.JOB_START > 120 * 60:
+                b["state"] = "done"
+            return _j.dumps(b).encode()
+        job.r2.get_bytes = get
+        return iid
+    vast.create = create
+    r = job.run_draw({"type": "draw", "name": "d", "lora": "k", "angles": [0]}, out, log)
+    assert r["state"] == "done" and vast.destroyed == vast.created == [101]
+
+
+def test_draw_without_progress_is_stopped(monkeypatch, tmp_path):
+    job, vast, out, log = setup(monkeypatch, tmp_path, [(3, "booted"), (6, "loading model"), (10, "drawing")])
+    with pytest.raises(RuntimeError, match="stalled:drawing"):
+        job.run_draw({"type": "draw", "name": "d", "lora": "k", "angles": [0]}, out, log)
+    assert vast.destroyed == vast.created == [101]
