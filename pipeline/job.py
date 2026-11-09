@@ -133,6 +133,12 @@ def run_probe(job, out, log):
         res["vast_h100_offers"] = [{k: x.get(k) for k in ("id", "gpu_name", "dph_total", "reliability2", "inet_down", "geolocation", "cuda_max_good", "disk_space")} for x in o.json().get("offers", [])]
     else:
         res["vast_offers_error"] = o.text[:300]
+    try:   # the exact list a training job would pick from
+        import vast
+        res["train_offers"] = [{k: x.get(k) for k in ("id", "gpu_name", "dph_total", "dlperf", "reliability2", "inet_down", "geolocation", "cuda_max_good")}
+                               for x in vast.offers()]
+    except Exception as e:  # noqa: BLE001
+        res["train_offers_error"] = str(e)[:300]
     # Cesium: does the token reach the Google tiles asset?
     c = requests.get("https://api.cesium.com/v1/assets/2275207/endpoint", params={"access_token": os.environ["CESIUM_ION_TOKEN"]}, timeout=30)
     res["cesium_status"] = c.status_code

@@ -33,14 +33,20 @@ def credit():
     return r.json().get("credit")
 
 
+# 80 GB+ x86 GPUs that run the CUDA 13 image; ranked by deep-learning speed per dollar
+GOOD_GPUS = ("H100", "H200", "B200", "A100", "RTX PRO 6000")
+
+
 def offers(max_dph=3.2, n=10, max_bw_cost=10.0):
-    q = {"gpu_name": {"in": ["H100 SXM", "H100 PCIE", "H100 NVL"]}, "rentable": {"eq": True}, "verified": {"eq": True},
-         "num_gpus": {"eq": 1}, "reliability2": {"gte": 0.98}, "disk_space": {"gte": 200}, "inet_down": {"gte": 500},
+    q = {"gpu_ram": {"gte": 79000}, "rentable": {"eq": True}, "verified": {"eq": True},
+         "num_gpus": {"eq": 1}, "reliability2": {"gte": 0.97}, "disk_space": {"gte": 200}, "inet_down": {"gte": 300},
          "cuda_max_good": {"gte": 13.0}, "dph_total": {"lte": max_dph},
          "inet_down_cost": {"lte": max_bw_cost / 1000}, "inet_up_cost": {"lte": max_bw_cost / 1000},  # $/GB; max_bw_cost is $/TB
-         "order": [["dph_total", "asc"]], "type": "ondemand", "limit": n}
+         "order": [["dlperf_per_dphtotal", "desc"]], "type": "on-demand", "limit": 40}
     r = _req("POST", "/bundles/", json=q); r.raise_for_status()
-    return r.json().get("offers", [])
+    got = [o for o in r.json().get("offers", [])
+           if any(g in (o.get("gpu_name") or "") for g in GOOD_GPUS) and not (o.get("gpu_name") or "").startswith("GH")]
+    return got[:n]
 
 
 def create(offer_id, label, onstart, env, disk_gb=200):
