@@ -42,7 +42,7 @@ def load_model(lora_path):
     from toolkit.lora_special import LoRASpecialNetwork
     from safetensors.torch import load_file
     from extensions_built_in.diffusion_models.qwen_image_2 import QwenImage2Model
-    cfg = ModelConfig(arch="qwen_image_2", quantize=True, quantize_te=True, model_kwargs={"turbo": True},
+    cfg = ModelConfig(arch="qwen_image_2", quantize=True, qtype="convrot8", quantize_te=True, qtype_te="convrot8", model_kwargs={"turbo": True},
                       name_or_path="Comfy-Org/Qwen-Image-2.1/diffusion_models/qwen_image_2.1_turbo_int8_convrot.safetensors")
     model = QwenImage2Model(device="cuda:0", model_config=cfg, dtype="bf16")
     model.load_model()

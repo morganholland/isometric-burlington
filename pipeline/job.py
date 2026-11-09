@@ -2,7 +2,7 @@
 
 {"type": "render", "name": "render-test-1", "angle": 0, "centers": [[44.4759, -73.2121]], "n": 2, "size": 1024}
 """
-import json, os, subprocess, sys, time, traceback
+import json, os, random, subprocess, sys, time, traceback
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).parent))
@@ -238,9 +238,16 @@ def run_render_blocks(job, out, log):
         fr = [[bx + i * F, by + j * F] for j in range(B // F) for i in range(B // F)]
         d = out / f"b{bx}_{by}"; d.mkdir(parents=True, exist_ok=True)
         (d / "frames.json").write_text(json.dumps(fr))
-        p = subprocess.run(["node", "pipeline/render/render.mjs", "--angle", str(a), "--frames", str(d / "frames.json"),
-                            "--out", str(d), "--size", str(F)], cwd=ROOT, capture_output=True, text=True, timeout=3600)
-        log.write(f"block {bx},{by}:\n" + p.stdout[-2000:] + p.stderr[-2000:]); log.flush()
+        # Cesium ion answers 429 when many runners open sessions at once; render.mjs keeps finished
+        # frames, so a retry after a pause only redraws what is missing.
+        for attempt in range(4):
+            if attempt:
+                time.sleep(60 * attempt + random.uniform(0, 30))
+            p = subprocess.run(["node", "pipeline/render/render.mjs", "--angle", str(a), "--frames", str(d / "frames.json"),
+                                "--out", str(d), "--size", str(F)], cwd=ROOT, capture_output=True, text=True, timeout=3600)
+            log.write(f"block {bx},{by} try {attempt + 1}:\n" + p.stdout[-2000:] + p.stderr[-2000:]); log.flush()
+            if all((d / f"{x}_{y}.png").exists() for x, y in fr):
+                break
         if any(not (d / f"{x}_{y}.png").exists() for x, y in fr):
             failed.append([bx, by]); continue
         rgb = Image.new("RGBA", (B, B)); hgt = Image.new("RGBA", (B, B))
