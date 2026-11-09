@@ -1,0 +1,77 @@
+/* Map fills the screen; small frosted cards float on it. Palette: Lake Champlain slate + warm brick. */
+:root{
+  --ground:#2f4553; --card:rgba(250,251,250,.92); --ink:#13202a; --muted:#56656f; --line:rgba(19,32,42,.12);
+  --accent:#b8462d; --outline:#e7c48b; --night:0;
+  --display:"Bricolage Grotesque","Avenir Next",system-ui,sans-serif;
+  --body:"IBM Plex Sans",system-ui,-apple-system,"Segoe UI",sans-serif;
+  --mono:"IBM Plex Mono",ui-monospace,Menlo,monospace;
+  --safe-t:env(safe-area-inset-top,0px); --safe-b:env(safe-area-inset-bottom,0px);
+  --safe-l:env(safe-area-inset-left,0px); --safe-r:env(safe-area-inset-right,0px);
+}
+@media (prefers-color-scheme:dark){:root{--card:rgba(17,26,33,.88);--ink:#e6edf0;--muted:#9fb0ba;--line:rgba(255,255,255,.12)}}
+[hidden]{display:none!important}
+html,body{height:100%;margin:0;background:var(--ground);color:var(--ink);font:14px/1.45 var(--body);overflow:hidden}
+#map{position:fixed;inset:0;background:radial-gradient(120% 90% at 50% 40%,#3c5a6c,#1d2c36)}
+.leaflet-container{background:transparent;font:inherit}
+.iso-tiles{image-rendering:auto}
+.leaflet-tile-pane{filter:brightness(calc(1 - var(--night)*.55)) saturate(calc(1 - var(--night)*.35));transition:filter .6s}
+#night{position:fixed;inset:0;pointer-events:none;background:#14234a;mix-blend-mode:multiply;opacity:calc(var(--night)*.55);transition:opacity .6s;z-index:401}
+#fx{position:fixed;inset:0;width:100%;height:100%;pointer-events:none;z-index:402}
+body.turning #map{animation:turn .26s ease-out}
+@keyframes turn{from{opacity:.35;transform:scale(1.015)}to{opacity:1;transform:none}}
+@media (prefers-reduced-motion:reduce){body.turning #map{animation:none}}
+
+.card{background:var(--card);backdrop-filter:blur(10px);-webkit-backdrop-filter:blur(10px);border:1px solid var(--line);border-radius:10px;box-shadow:0 6px 24px rgba(0,0,0,.18);z-index:500;color:var(--ink)}
+.brand{position:fixed;top:calc(12px + var(--safe-t));left:calc(12px + var(--safe-l));padding:10px 14px}
+.brand-title{font:700 19px/1.1 var(--display);letter-spacing:-.005em}
+.brand-sub{font:500 11.5px/1.3 var(--mono);color:var(--muted);margin-top:3px;letter-spacing:.02em}
+
+#search{position:fixed;top:calc(12px + var(--safe-t));right:calc(12px + var(--safe-r));width:min(340px,calc(100vw - 24px - var(--safe-l) - var(--safe-r)));padding:0}
+#q{width:100%;box-sizing:border-box;border:0;background:transparent;color:var(--ink);font:15px var(--body);padding:11px 14px;border-radius:10px;outline:none}
+#q:focus-visible{box-shadow:inset 0 0 0 2px var(--accent)}
+#results{list-style:none;margin:0;padding:4px;border-top:1px solid var(--line);max-height:50vh;overflow:auto}
+#results button{display:grid;gap:1px;width:100%;text-align:left;border:0;background:transparent;color:var(--ink);padding:8px 10px;border-radius:7px;cursor:pointer;font:14px var(--body)}
+#results button:hover,#results button:focus-visible{background:var(--line);outline:none}
+#results span{color:var(--muted);font-size:12px}
+#results .empty{padding:10px;color:var(--muted)}
+
+.notice{position:fixed;left:50%;transform:translateX(-50%);top:calc(84px + var(--safe-t));max-width:min(460px,calc(100vw - 32px));padding:12px 16px;font-size:13.5px}
+.notice b{color:var(--accent)}
+
+.controls{position:fixed;right:calc(12px + var(--safe-r));bottom:calc(48px + var(--safe-b));display:grid;gap:8px;justify-items:end;z-index:500}
+.stack{display:grid}
+.stack button,.single{width:40px;height:40px;border:0;background:transparent;color:var(--ink);font:600 19px/1 var(--body);cursor:pointer}
+.stack button+button{border-top:1px solid var(--line)}
+.single{background:var(--card)}
+.stack button:hover,.single:hover{color:var(--accent)}
+button:focus-visible{outline:2px solid var(--accent);outline-offset:-2px;border-radius:8px}
+.compass{width:40px;height:40px;position:relative}
+.compass .needle{position:absolute;left:50%;top:50%;width:2px;height:15px;background:var(--accent);transform-origin:50% 100%;transform:translate(-50%,-100%) rotate(var(--north,0deg));border-radius:2px;transition:transform .3s}
+.compass .n{position:absolute;inset:0;display:grid;place-items:center;font:600 9px var(--mono);color:var(--muted);transform:rotate(var(--north,0deg)) translateY(-13px) rotate(calc(-1 * var(--north,0deg)))}
+
+.panel{position:fixed;right:calc(60px + var(--safe-r));bottom:calc(48px + var(--safe-b));padding:12px 14px;display:grid;gap:10px;min-width:190px}
+fieldset{border:0;margin:0;padding:0;display:grid;gap:4px}
+legend{font:600 11px var(--mono);letter-spacing:.08em;text-transform:uppercase;color:var(--muted);margin-bottom:4px}
+.panel label{display:flex;gap:8px;align-items:center;cursor:pointer}
+.panel input{accent-color:var(--accent)}
+
+.status{position:fixed;left:calc(12px + var(--safe-l));right:calc(12px + var(--safe-r));bottom:calc(10px + var(--safe-b));display:flex;justify-content:space-between;gap:12px;padding:6px 12px;font:500 11.5px var(--mono);border-radius:8px;box-shadow:none}
+.status .credit{color:var(--muted);text-align:right;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+#status{white-space:nowrap}
+
+.pin{position:relative}
+.pin-dot{position:absolute;left:-7px;top:-7px;width:14px;height:14px;border-radius:50%;background:var(--accent);box-shadow:0 0 0 4px rgba(184,70,45,.3);animation:pulse 1.8s infinite}
+.pin-label{position:absolute;left:12px;top:-12px;white-space:nowrap;background:var(--card);border:1px solid var(--line);padding:3px 8px;border-radius:6px;font:600 12.5px var(--body);color:var(--ink)}
+@keyframes pulse{50%{box-shadow:0 0 0 9px rgba(184,70,45,0)}}
+@media (prefers-reduced-motion:reduce){.pin-dot{animation:none}}
+.sr{position:absolute;width:1px;height:1px;overflow:hidden;clip:rect(0 0 0 0)}
+
+@media (max-width:640px){
+  .brand{right:calc(12px + var(--safe-r));padding:8px 12px}
+  .brand-title{font-size:17px}
+  .brand-sub{font-size:10.5px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+  .brand-sub .sun-sep,#sun{display:none}
+  #search{top:calc(76px + var(--safe-t));left:calc(12px + var(--safe-l));width:auto}
+  .notice{top:calc(130px + var(--safe-t))}
+  .status .credit{display:none}
+}

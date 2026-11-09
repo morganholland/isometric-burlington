@@ -1,0 +1,17 @@
+{
+  "name": "isometric-burlington",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "build:render": "esbuild pipeline/render/page.js --bundle --format=esm --outfile=pipeline/render/dist/page.js",
+    "test": "node --test tests/*.test.mjs",
+    "pretest": "[ -e node_modules/playwright ] || ln -s /opt/npm-tools/node_modules/playwright node_modules/playwright"
+  },
+  "dependencies": {
+    "3d-tiles-renderer": "^0.5.3",
+    "esbuild": "^0.25.10",
+    "leaflet": "^1.9.4",
+    "suncalc": "^1.9.0",
+    "three": "^0.186.1"
+  }
+}

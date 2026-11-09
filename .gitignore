@@ -1,0 +1,10 @@
+node_modules/
+site/
+pipeline/render/dist/
+renders/
+drawn/
+tiles/
+teacher/
+.env
+*.safetensors
+__pycache__/

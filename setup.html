@@ -1,0 +1,237 @@
+<title>Isometric Burlington Setup</title>
+<meta name="claude:viewport-fit-sides" content="cover">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,600;12..96,750&family=IBM+Plex+Sans:wght@400;500;600&family=IBM+Plex+Mono:wght@400;500&display=swap">
+<style>
+/* Layout: one narrow column of step cards, each card = why / buttons / values to paste / where to drop the result; reply builder at the end */
+:root{
+  --bg:#f2f5f6; --card:#ffffff; --ink:#14212a; --muted:#566874; --line:#d7e0e4;
+  --lake:#1d5c86; --lake-soft:#e3eef6; --money:#8a5a00; --money-soft:#fbf0d9; --ok:#1f7a4d; --ok-soft:#e1f3e9;
+  --chip:#eef3f5;
+  --display:"Bricolage Grotesque", "Avenir Next", system-ui, sans-serif;
+  --body:"IBM Plex Sans", system-ui, -apple-system, "Segoe UI", sans-serif;
+  --mono:"IBM Plex Mono", ui-monospace, "SF Mono", Menlo, monospace;
+}
+@media (prefers-color-scheme: dark){:root:not([data-theme="light"]){
+  --bg:#0e161b; --card:#15212a; --ink:#e4edf1; --muted:#9bb0bc; --line:#26353f;
+  --lake:#6fb3e3; --lake-soft:#16303f; --money:#f0c264; --money-soft:#33280f; --ok:#6fd3a0; --ok-soft:#123224; --chip:#1c2b35; color-scheme:dark}}
+:root[data-theme="dark"]{
+  --bg:#0e161b; --card:#15212a; --ink:#e4edf1; --muted:#9bb0bc; --line:#26353f;
+  --lake:#6fb3e3; --lake-soft:#16303f; --money:#f0c264; --money-soft:#33280f; --ok:#6fd3a0; --ok-soft:#123224; --chip:#1c2b35; color-scheme:dark}
+*{box-sizing:border-box}
+body{background:var(--bg);color:var(--ink);font:15px/1.55 var(--body);
+  padding-left:max(16px,env(safe-area-inset-left,0px));padding-right:max(16px,env(safe-area-inset-right,0px));padding-block:32px 64px}
+.wrap{max-width:720px;margin:0 auto;display:grid;gap:18px}
+header{display:grid;gap:10px;padding-bottom:8px}
+.eyebrow{font:500 12px/1 var(--mono);letter-spacing:.08em;text-transform:uppercase;color:var(--lake)}
+h1{font:750 clamp(28px,6vw,40px)/1.05 var(--display);margin:0;text-wrap:balance;letter-spacing:-.01em}
+.lede{margin:0;color:var(--muted);max-width:62ch}
+.budget{display:flex;flex-wrap:wrap;gap:8px}
+.pill{font:500 12.5px/1 var(--mono);padding:7px 10px;border-radius:999px;background:var(--chip);color:var(--ink);font-variant-numeric:tabular-nums}
+.pill.money{background:var(--money-soft);color:var(--money)}
+.card{background:var(--card);border:1px solid var(--line);border-radius:10px;padding:20px;display:grid;gap:14px}
+.card.done{border-color:var(--ok)}
+.head{display:flex;gap:14px;align-items:flex-start}
+.num{flex:none;width:32px;height:32px;border-radius:50%;display:grid;place-items:center;font:600 14px/1 var(--mono);background:var(--lake-soft);color:var(--lake)}
+.card.done .num{background:var(--ok-soft);color:var(--ok)}
+.head h2{font:600 19px/1.25 var(--display);margin:4px 0 4px;text-wrap:balance}
+.head p{margin:0;color:var(--muted);font-size:14px}
+.meta{font:500 12px/1 var(--mono);color:var(--muted);display:flex;gap:10px;flex-wrap:wrap;margin-top:6px}
+.meta .money{color:var(--money)}
+ol.steps{margin:0;padding-left:20px;display:grid;gap:9px}
+ol.steps li{padding-left:2px}
+ol.steps li::marker{color:var(--muted);font:500 13px var(--mono)}
+.btn{display:inline-flex;align-items:center;gap:6px;text-decoration:none;font:600 13.5px/1 var(--body);padding:9px 13px;border-radius:7px;background:var(--lake);color:var(--card);border:0;cursor:pointer;margin:4px 6px 2px 0}
+.btn:hover{filter:brightness(1.08)}
+.btn:focus-visible,.copy:focus-visible,input:focus-visible,.check:focus-visible{outline:2px solid var(--lake);outline-offset:2px}
+.btn.ghost{background:transparent;color:var(--lake);border:1px solid var(--lake)}
+.val{display:inline-flex;align-items:center;gap:0;border:1px solid var(--line);border-radius:6px;background:var(--chip);vertical-align:middle;max-width:100%;margin:2px 0}
+.val code{font:500 13px/1 var(--mono);padding:6px 8px;overflow-wrap:anywhere}
+.copy{font:600 11.5px/1 var(--body);border:0;border-left:1px solid var(--line);background:transparent;color:var(--lake);padding:7px 9px;cursor:pointer;border-radius:0 6px 6px 0}
+.copy.ok{color:var(--ok)}
+.field{display:grid;gap:6px;border-top:1px dashed var(--line);padding-top:14px}
+.field label{font:600 13px/1.3 var(--body)}
+.field small{color:var(--muted);font-size:12.5px}
+.inrow{display:flex;gap:8px}
+input[type=text],input[type=password]{flex:1;min-width:0;font:13px/1 var(--mono);padding:10px;border-radius:6px;border:1px solid var(--line);background:var(--bg);color:var(--ink)}
+.eye{flex:none}
+.check{display:flex;align-items:center;gap:8px;font:500 13.5px var(--body);cursor:pointer;width:max-content}
+.check input{width:17px;height:17px;accent-color:var(--ok)}
+.note{font-size:13px;color:var(--muted);background:var(--chip);border-radius:7px;padding:10px 12px;margin:0}
+.reply{border-color:var(--lake)}
+pre#reply{margin:0;font:12.5px/1.5 var(--mono);background:var(--bg);border:1px solid var(--line);border-radius:7px;padding:12px;white-space:pre-wrap;overflow-wrap:anywhere;max-height:320px;overflow:auto}
+.status{font:500 12.5px var(--mono);color:var(--muted)}
+footer{font-size:12.5px;color:var(--muted);text-align:center}
+@media (prefers-reduced-motion:reduce){*{transition:none!important}}
+</style>
+
+<div class="wrap">
+<header>
+  <div class="eyebrow">Isometric Burlington · your part</div>
+  <h1>Five accounts, then I take it from here</h1>
+  <p class="lede">These are the only steps that need you: accounts, keys and prepaid credit. Paste each key into the box under its step. The boxes stay in this browser tab only and are never saved or sent anywhere. At the bottom, copy the finished reply and paste it into our chat.</p>
+  <div class="budget">
+    <span class="pill">Area: Burlington · S. Burlington · Winooski</span>
+    <span class="pill money">Expected spend ≈ $90–110</span>
+    <span class="pill money">Hard caps: $40 OpenAI + $80 Vast.ai</span>
+  </div>
+</header>
+
+<!-- 1 GitHub -->
+<section class="card" data-step="gh">
+  <div class="head"><div class="num">1</div><div>
+    <h2>Create the code repo</h2>
+    <p>Where the map's code lives so I can version, test and deploy it.</p>
+    <div class="meta"><span>1 min</span><span>free</span></div>
+  </div></div>
+  <ol class="steps">
+    <li>Open the pre-filled form: <a class="btn" href="https://github.com/new?name=isometric-burlington&description=Burlington%2C%20Vermont%20drawn%20as%20an%20isometric%20city%20map&visibility=public" target="_blank" rel="noopener">New repo on GitHub ↗</a></li>
+    <li>Check the name is <span class="val"><code>isometric-burlington</code><button class="copy" data-copy="isometric-burlington">Copy</button></span> and the owner is your account. Leave README, .gitignore and license unchecked.</li>
+    <li>Click <b>Create repository</b>.</li>
+  </ol>
+  <div class="field"><label class="check"><input type="checkbox" id="gh-done" data-key="gh"> Repo created</label></div>
+</section>
+
+<!-- 2 Cesium -->
+<section class="card" data-step="cesium">
+  <div class="head"><div class="num">2</div><div>
+    <h2>Cesium ion: access to Google's 3D city</h2>
+    <p>The 3D model of Burlington every frame is rendered from. Cesium's free plan includes Google's Photorealistic 3D Tiles, so there's no Google bill.</p>
+    <div class="meta"><span>4 min</span><span>free</span></div>
+  </div></div>
+  <ol class="steps">
+    <li>Sign up (Google sign-in is fine): <a class="btn" href="https://ion.cesium.com/signup" target="_blank" rel="noopener">Cesium ion sign-up ↗</a></li>
+    <li>Open Google's 3D tiles in the Asset Depot and click <b>Add to my assets</b>: <a class="btn ghost" href="https://ion.cesium.com/assetdepot/2275207" target="_blank" rel="noopener">Google Photorealistic 3D Tiles ↗</a></li>
+    <li>Go to Access Tokens and click <b>Create token</b>: <a class="btn ghost" href="https://ion.cesium.com/tokens" target="_blank" rel="noopener">Access Tokens ↗</a></li>
+    <li>Name it <span class="val"><code>iso-burlington</code><button class="copy" data-copy="iso-burlington">Copy</button></span>, keep the default scopes, and under <b>Resources</b> leave <b>All assets</b> selected. Create, then copy the token.</li>
+  </ol>
+  <div class="field">
+    <label for="cesium">Cesium ion token</label>
+    <div class="inrow"><input type="password" id="cesium" data-key="CESIUM_ION_TOKEN" autocomplete="off" spellcheck="false" placeholder="eyJhbGciOi…"><button class="btn ghost eye" type="button" data-eye="cesium">Show</button></div>
+    <small>This one unblocks me first: I can start rendering Burlington as soon as I have it.</small>
+  </div>
+</section>
+
+<!-- 3 OpenAI -->
+<section class="card" data-step="openai">
+  <div class="head"><div class="num">3</div><div>
+    <h2>OpenAI: the "teacher" that sets the art style</h2>
+    <p>GPT Image redraws about 400 renders of Burlington as illustrations. Those become the training examples for the cheap open model that draws the whole metro.</p>
+    <div class="meta"><span>5 min</span><span class="money">$40 prepaid · expect ~$30</span></div>
+  </div></div>
+  <ol class="steps">
+    <li>Add <span class="val"><code>40</code><button class="copy" data-copy="40">Copy</button></span> dollars of credit and make sure <b>auto recharge is off</b>, so $40 is a hard ceiling: <a class="btn" href="https://platform.openai.com/settings/organization/billing/overview" target="_blank" rel="noopener">OpenAI billing ↗</a></li>
+    <li>If the General page shows <b>Verify Organization</b>, complete it (image models require it; it takes a couple of minutes with an ID): <a class="btn ghost" href="https://platform.openai.com/settings/organization/general" target="_blank" rel="noopener">Organization settings ↗</a></li>
+    <li>Create a key named <span class="val"><code>iso-burlington</code><button class="copy" data-copy="iso-burlington">Copy</button></span> with <b>All</b> permissions, then copy it: <a class="btn ghost" href="https://platform.openai.com/api-keys" target="_blank" rel="noopener">API keys ↗</a></li>
+  </ol>
+  <div class="field">
+    <label for="openai">OpenAI API key</label>
+    <div class="inrow"><input type="password" id="openai" data-key="OPENAI_API_KEY" autocomplete="off" spellcheck="false" placeholder="sk-proj-…"><button class="btn ghost eye" type="button" data-eye="openai">Show</button></div>
+  </div>
+</section>
+
+<!-- 4 Vast -->
+<section class="card" data-step="vast">
+  <div class="head"><div class="num">4</div><div>
+    <h2>Vast.ai: rented H100 GPUs</h2>
+    <p>Trains the style model (about an hour) and draws the metro from four angles. Prepaid credit is the spend cap: when it runs out, machines stop. I also give every machine its own limit and auto-delete timer.</p>
+    <div class="meta"><span>4 min</span><span class="money">$80 prepaid · expect ~$60–70</span></div>
+  </div></div>
+  <ol class="steps">
+    <li>Sign up: <a class="btn" href="https://cloud.vast.ai/" target="_blank" rel="noopener">Vast.ai ↗</a></li>
+    <li>Add <span class="val"><code>80</code><button class="copy" data-copy="80">Copy</button></span> dollars of credit. Leave auto-billing off: <a class="btn ghost" href="https://cloud.vast.ai/billing/" target="_blank" rel="noopener">Vast billing ↗</a></li>
+    <li>Create an API key named <span class="val"><code>iso-burlington</code><button class="copy" data-copy="iso-burlington">Copy</button></span> and copy it: <a class="btn ghost" href="https://cloud.vast.ai/manage-keys/" target="_blank" rel="noopener">Vast API keys ↗</a></li>
+  </ol>
+  <div class="field">
+    <label for="vast">Vast.ai API key</label>
+    <div class="inrow"><input type="password" id="vast" data-key="VAST_API_KEY" autocomplete="off" spellcheck="false"><button class="btn ghost eye" type="button" data-eye="vast">Show</button></div>
+  </div>
+</section>
+
+<!-- 5 R2 -->
+<section class="card" data-step="r2">
+  <div class="head"><div class="num">5</div><div>
+    <h2>Cloudflare R2: where the map tiles live</h2>
+    <p>I already created the bucket <b>iso-burlington</b> in your Cloudflare account. It needs an upload key and a public address. About 3 GB of tiles fits in R2's free tier.</p>
+    <div class="meta"><span>4 min</span><span>free</span></div>
+  </div></div>
+  <ol class="steps">
+    <li>Open R2 API tokens and click <b>Create Account API Token</b>: <a class="btn" href="https://dash.cloudflare.com/?to=/:account/r2/api-tokens" target="_blank" rel="noopener">R2 API tokens ↗</a></li>
+    <li>Token name <span class="val"><code>iso-burlington</code><button class="copy" data-copy="iso-burlington">Copy</button></span> · Permissions <span class="val"><code>Object Read &amp; Write</code><button class="copy" data-copy="Object Read & Write">Copy</button></span> · <b>Apply to specific buckets only</b> → <span class="val"><code>iso-burlington</code><button class="copy" data-copy="iso-burlington">Copy</button></span> · TTL <b>Forever</b>. Create.</li>
+    <li>Copy the three values on the next screen into the boxes below: <b>Access Key ID</b>, <b>Secret Access Key</b>, and the <b>default</b> S3 endpoint (starts with https:// and ends in r2.cloudflarestorage.com).</li>
+    <li>Open the bucket's settings, find <b>Public Development URL</b>, click <b>Enable</b>, type <span class="val"><code>allow</code><button class="copy" data-copy="allow">Copy</button></span> and confirm. Copy the <code>pub-….r2.dev</code> address: <a class="btn ghost" href="https://dash.cloudflare.com/?to=/:account/r2/default/buckets/iso-burlington/settings" target="_blank" rel="noopener">Bucket settings ↗</a></li>
+  </ol>
+  <div class="field">
+    <label for="r2id">Access Key ID</label>
+    <div class="inrow"><input type="password" id="r2id" data-key="R2_ACCESS_KEY_ID" autocomplete="off" spellcheck="false"><button class="btn ghost eye" type="button" data-eye="r2id">Show</button></div>
+    <label for="r2secret">Secret Access Key</label>
+    <div class="inrow"><input type="password" id="r2secret" data-key="R2_SECRET_ACCESS_KEY" autocomplete="off" spellcheck="false"><button class="btn ghost eye" type="button" data-eye="r2secret">Show</button></div>
+    <label for="r2endpoint">S3 endpoint</label>
+    <div class="inrow"><input type="text" id="r2endpoint" data-key="R2_ENDPOINT" autocomplete="off" spellcheck="false" placeholder="https://….r2.cloudflarestorage.com"></div>
+    <label for="r2public">Public Development URL</label>
+    <div class="inrow"><input type="text" id="r2public" data-key="R2_PUBLIC_URL" autocomplete="off" spellcheck="false" placeholder="https://pub-….r2.dev"></div>
+  </div>
+</section>
+
+<!-- Reply -->
+<section class="card reply">
+  <div class="head"><div class="num">→</div><div>
+    <h2>Send this back to me</h2>
+    <p>It fills in from the boxes above. Partial is fine: send what you have and I'll start with it.</p>
+  </div></div>
+  <pre id="reply"></pre>
+  <div class="inrow" style="align-items:center;flex-wrap:wrap">
+    <button class="btn" type="button" id="copy-reply">Copy reply</button>
+    <span class="status" id="reply-status"></span>
+  </div>
+  <p class="note">Your keys are only in this tab's memory. Closing or reloading the page clears them. I'll keep them out of the code repo and out of the public site.</p>
+</section>
+
+<footer>Isometric Burlington · method from Isometric Toronto and Tiny London</footer>
+</div>
+
+<script>
+(function(){
+  function copyText(text, btn){
+    var done=function(){ if(!btn) return; var t=btn.textContent; btn.textContent='Copied'; btn.classList.add('ok'); setTimeout(function(){btn.textContent=t; btn.classList.remove('ok');},1400); };
+    try{
+      navigator.clipboard.writeText(text).then(done,function(){fallback(text);done();});
+    }catch(e){ fallback(text); done(); }
+  }
+  function fallback(text){
+    var ta=document.createElement('textarea'); ta.value=text; ta.setAttribute('readonly',''); ta.style.position='fixed'; ta.style.opacity='0';
+    document.body.appendChild(ta); ta.select(); try{document.execCommand('copy');}catch(e){} document.body.removeChild(ta);
+  }
+  document.querySelectorAll('[data-copy]').forEach(function(b){ b.addEventListener('click',function(){copyText(b.getAttribute('data-copy'),b);}); });
+  document.querySelectorAll('[data-eye]').forEach(function(b){ b.addEventListener('click',function(){
+    var i=document.getElementById(b.getAttribute('data-eye')); var show=i.type==='password'; i.type=show?'text':'password'; b.textContent=show?'Hide':'Show'; }); });
+
+  var fields=[].slice.call(document.querySelectorAll('input[data-key]'));
+  var labels={CESIUM_ION_TOKEN:'Cesium',OPENAI_API_KEY:'OpenAI',VAST_API_KEY:'Vast.ai',R2_ACCESS_KEY_ID:'R2 key id',R2_SECRET_ACCESS_KEY:'R2 secret',R2_ENDPOINT:'R2 endpoint',R2_PUBLIC_URL:'R2 public URL'};
+  var replyEl=document.getElementById('reply'), statusEl=document.getElementById('reply-status');
+  function build(){
+    var lines=[], missing=[];
+    var gh=document.getElementById('gh-done').checked;
+    lines.push('Setup for Isometric Burlington:');
+    lines.push(gh?'- GitHub repo isometric-burlington: created':'- GitHub repo: not yet');
+    fields.forEach(function(i){
+      var k=i.getAttribute('data-key'); if(k==='gh') return;
+      var v=i.value.trim();
+      if(v) lines.push(k+'='+v); else missing.push(labels[k]);
+    });
+    if(missing.length) lines.push('Still to do: '+missing.join(', '));
+    else lines.push('All done. Go ahead and start.');
+    replyEl.textContent=lines.join('\n');
+    var have=fields.filter(function(i){return i.getAttribute('data-key')!=='gh' && i.value.trim();}).length;
+    statusEl.textContent=have+' of 7 values filled'+(gh?' · repo created':'');
+    document.querySelectorAll('.card[data-step]').forEach(function(c){
+      var ins=[].slice.call(c.querySelectorAll('input[data-key]'));
+      var ok=ins.length && ins.every(function(i){return i.type==='checkbox'?i.checked:i.value.trim();});
+      c.classList.toggle('done',!!ok);
+    });
+  }
+  fields.forEach(function(i){ i.addEventListener(i.type==='checkbox'?'change':'input',build); });
+  document.getElementById('copy-reply').addEventListener('click',function(e){ copyText(replyEl.textContent,e.currentTarget); });
+  build();
+})();
+</script>

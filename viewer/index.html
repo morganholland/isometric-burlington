@@ -1,0 +1,65 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Isometric Burlington</title>
+<meta name="description" content="Burlington, South Burlington and Winooski, Vermont, drawn as an isometric city map you can turn, with the real sunset and live weather.">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,700&family=IBM+Plex+Sans:wght@400;500;600&family=IBM+Plex+Mono:wght@500&display=swap">
+<link rel="stylesheet" href="./leaflet.css">
+<link rel="stylesheet" href="./style.css">
+<script>window.ISO_CONFIG = { tileBase: "__TILE_BASE__" };</script>
+</head>
+<body>
+<div id="map" aria-label="Isometric map of Burlington, Vermont"></div>
+<div id="night" aria-hidden="true"></div>
+<canvas id="fx" aria-hidden="true"></canvas>
+
+<header class="card brand">
+  <div class="brand-title">Isometric Burlington</div>
+  <div class="brand-sub">Burlington · South Burlington · Winooski<span class="sun-sep"> · </span><span id="sun"></span></div>
+</header>
+
+<form id="search" class="card" role="search" autocomplete="off">
+  <label class="sr" for="q">Search streets, buildings and places</label>
+  <input id="q" type="search" placeholder="Search a street, place or address" spellcheck="false">
+  <ul id="results" hidden></ul>
+</form>
+
+<div id="drawing" class="card notice" hidden>
+  <b>Burlington is being drawn.</b> This outline is the area coming to the map: the whole of Burlington, South Burlington and Winooski, from four angles.
+</div>
+
+<div class="controls">
+  <div id="compass" class="card compass" role="img" aria-label="North"><span class="needle"></span><span class="n">N</span></div>
+  <div class="card stack">
+    <button id="rot-left" type="button" title="Turn left ([)" aria-label="Turn the map left">⟲</button>
+    <button id="rot-right" type="button" title="Turn right (])" aria-label="Turn the map right">⟳</button>
+  </div>
+  <div class="card stack">
+    <button id="zoom-in" type="button" aria-label="Zoom in">+</button>
+    <button id="zoom-out" type="button" aria-label="Zoom out">−</button>
+  </div>
+  <button id="layers-btn" class="card single" type="button" aria-expanded="false" aria-controls="layers" title="Time and weather">◐</button>
+</div>
+
+<section id="layers" class="card panel" hidden>
+  <fieldset><legend>Time of day</legend>
+    <label><input type="radio" name="time" value="live" checked> Burlington's clock</label>
+    <label><input type="radio" name="time" value="day"> Always day</label>
+    <label><input type="radio" name="time" value="night"> Always night</label>
+  </fieldset>
+  <fieldset><legend>Weather</legend>
+    <label><input type="radio" name="wx" value="live" checked> Live from BTV</label>
+    <label><input type="radio" name="wx" value="clear"> Clear</label>
+    <label><input type="radio" name="wx" value="rain"> Rain</label>
+    <label><input type="radio" name="wx" value="snow"> Snow</label>
+    <label><input type="radio" name="wx" value="fog"> Fog</label>
+  </fieldset>
+</section>
+
+<footer class="status card"><span id="status">Burlington</span><span class="credit">Imagery Google · Cesium ion · Built with Qwen · © OpenStreetMap contributors · Weather NWS</span></footer>
+<script type="module" src="./app.js"></script>
+</body>
+</html>
