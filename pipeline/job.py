@@ -217,6 +217,44 @@ def run_teacher_set(job, out, log):
             "skipped": {k: sum(1 for i in items if i.get("skip") == k) for k in {i.get("skip") for i in items if i.get("skip")}}}
 
 
+def run_render_blocks(job, out, log):
+    """Render every 4096 px block in this shard (16 frames each), assemble the colour and height
+    blocks and upload them to R2 renders/a<angle>/. Blocks already in R2 are skipped."""
+    import numpy as np
+    from PIL import Image
+    a, shard, nsh = job["angle"], job["shard"], job["shards"]
+    g = json.loads((ROOT / "data/grid.json").read_text())["angles"][a]
+    blocks = g["blocks"][shard::nsh]
+    B, F = geo.BLOCK, geo.FRAME
+    done, failed = 0, []
+    for bx, by in blocks:
+        key = f"renders/a{a}/{bx}_{by}.png"
+        try:
+            r2.client().head_object(Bucket=r2.BUCKET, Key=key); done += 1; continue
+        except Exception:  # noqa: BLE001
+            pass
+        fr = [[bx + i * F, by + j * F] for j in range(B // F) for i in range(B // F)]
+        d = out / f"b{bx}_{by}"; d.mkdir(parents=True, exist_ok=True)
+        (d / "frames.json").write_text(json.dumps(fr))
+        p = subprocess.run(["node", "pipeline/render/render.mjs", "--angle", str(a), "--frames", str(d / "frames.json"),
+                            "--out", str(d), "--size", str(F)], cwd=ROOT, capture_output=True, text=True, timeout=3600)
+        log.write(f"block {bx},{by}:\n" + p.stdout[-2000:] + p.stderr[-2000:]); log.flush()
+        if any(not (d / f"{x}_{y}.png").exists() for x, y in fr):
+            failed.append([bx, by]); continue
+        rgb = Image.new("RGBA", (B, B)); hgt = Image.new("RGBA", (B, B))
+        for x, y in fr:
+            rgb.paste(Image.open(d / f"{x}_{y}.png"), (x - bx, y - by))
+            hgt.paste(Image.open(d / f"{x}_{y}.h.png"), (x - bx, y - by))
+        rgb.save(d / "block.png", optimize=False); hgt.save(d / "block.h.png")
+        r2.client().upload_file(str(d / "block.png"), r2.BUCKET, key, ExtraArgs={"ContentType": "image/png"})
+        r2.client().upload_file(str(d / "block.h.png"), r2.BUCKET, f"renders/a{a}/{bx}_{by}.h.png", ExtraArgs={"ContentType": "image/png"})
+        subprocess.run(["rm", "-rf", str(d)])
+        done += 1
+    if failed:
+        raise RuntimeError(f"{len(failed)} blocks had frames that never fully loaded: {failed}")
+    return {"blocks": len(blocks), "done": done}
+
+
 CAPTION = ("Redraw this exact image as a finished isometric city illustration in the Burlington city-builder style: "
            "flat colour, crisp dark outlines, tidy textures, bright clear daylight. Keep everything exactly in place.")
 AITK_COMMIT = "beb9482"
@@ -349,7 +387,7 @@ def main(path):
     r2.put_json(f"runs/{name}/status.json", status)
     log = open(out / "log.txt", "w")
     try:
-        result = {"render": run_render, "probe": run_probe, "teacher_test": run_teacher_test, "teacher_set": run_teacher_set, "train": run_train}[job["type"]](job, out, log)
+        result = {"render": run_render, "probe": run_probe, "teacher_test": run_teacher_test, "teacher_set": run_teacher_set, "train": run_train, "render_blocks": run_render_blocks}[job["type"]](job, out, log)
         status.update(state="done", result=result)
     except Exception:
         status.update(state="failed", error=traceback.format_exc()[-3000:])
@@ -357,7 +395,10 @@ def main(path):
         log.close()
         status["finished"] = time.time()
         status["minutes"] = round((status["finished"] - status["started"]) / 60, 1)
-        n = r2.put_dir(out, f"runs/{name}")
+        if job["type"] == "render_blocks":
+            n = 0; r2.put_bytes(f"runs/{name}/log.txt", (out / "log.txt").read_bytes(), "text/plain")
+        else:
+            n = r2.put_dir(out, f"runs/{name}")
         status["files"] = n
         r2.put_json(f"runs/{name}/status.json", status)
         print(json.dumps({k: v for k, v in status.items() if k != "error"}), status.get("error", ""))

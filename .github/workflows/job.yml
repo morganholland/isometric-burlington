@@ -25,7 +25,7 @@ jobs:
     timeout-minutes: 355
     strategy:
       fail-fast: false
-      max-parallel: 8
+      max-parallel: 18
       matrix:
         file: ${{ fromJson(needs.plan.outputs.files) }}
     env:
