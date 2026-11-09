@@ -469,7 +469,7 @@ meta: {{name: "{name}", version: "1"}}
 
 # how long a machine may sit in each state before we give up on it (minutes)
 STALL = {"starting": 25, "booted": 15, "downloading data": 30, "training": None}
-DRAW_STALL = {"starting": 25, "booted": 15, "loading model": 30, "drawing": 30}
+DRAW_STALL = {"starting": 25, "booted": 15, "loading model": 45, "drawing": 45}   # a block is ~5 min on a fast GPU
 
 
 def rent_and_run(job, log, name, script, env_extra, stall, max_hours):
@@ -588,6 +588,8 @@ def run_draw(job, out, log):
     {"type": "draw", "name": "draw-a0", "lora": "runs/train-lora3/out/train-lora3/train-lora3_000002500.safetensors",
      "angles": [0], "blocks": "", "limit": 0, "max_hours": 5}"""
     name = job["name"]
+    if not 16 <= job.get("stride", 48) <= 56:
+        raise ValueError("stride must be 16..56 latent cells so windows overlap (window is 64)")
     env = {"LORA_KEY": job["lora"], "ANGLES": ",".join(str(a) for a in job["angles"]),
            "BLOCKS": job.get("blocks", ""), "LIMIT": str(job.get("limit", 0)),
            "DRAW_RUN": job.get("draw_run", name), "STRIDE": str(job.get("stride", 48))}

@@ -22,6 +22,7 @@ BLOCK, LAT = 4096, 16
 MARGIN = 16      # latent cells of neighbour context on each side (256 px)
 SEED = 20261109
 STRIDE = int(os.environ.get("STRIDE", 48))
+assert 16 <= STRIDE <= 56 and STRIDE % 8 == 0, "stride must leave windows overlapping"
 
 s3 = boto3.client("s3", endpoint_url=os.environ["R2_ENDPOINT"], aws_access_key_id=os.environ["R2_ACCESS_KEY_ID"],
                   aws_secret_access_key=os.environ["R2_SECRET_ACCESS_KEY"], region_name="auto")
@@ -71,8 +72,10 @@ def load_model(lora_path):
     net.eval(); net.requires_grad_(False)
     net._update_torch_multiplier()
     missing = net.load_weights(sd)
+    if missing:   # keys that matched nothing: we would be drawing with the plain model
+        raise RuntimeError(f"LoRA did not load cleanly: {str(missing)[:500]}")
     net.multiplier = 1.0; net.is_active = True
-    print("LoRA loaded, rank", dim, "load result:", missing)
+    print("LoRA loaded, rank", dim)
     return model
 
 
@@ -159,6 +162,9 @@ def neighbour_latents(run, angle, bx, by, C, dev):
 
 def draw_block(model, run, angle, bx, by, have):
     t0 = time.time()
+    if r2_get(f"renders/a{angle}/{bx}_{by}.png") is None:
+        # never draw (and pin neighbours to) a block from black
+        raise RuntimeError(f"render block a{angle} {bx},{by} is missing; render it first")
     dev = model.device_torch
     C = model.model.config.in_channels
     H = W = BLOCK // LAT + 2 * MARGIN
@@ -168,7 +174,7 @@ def draw_block(model, run, angle, bx, by, have):
     y0, x0 = by // LAT - MARGIN, bx // LAT - MARGIN
     noise = S.global_noise(C, y0, x0, H, W, SEED + angle, dev)
     wm = WindowModel(model, canvas)
-    x, evals = S.sample_canvas(wm, noise, clean, pw, stride=STRIDE)
+    x, evals = S.sample_canvas(wm, noise, clean, pw, stride=STRIDE, shift=STRIDE // 2)
     block_lat = x[:, MARGIN:H - MARGIN, MARGIN:W - MARGIN].contiguous()
     # decode the block with a little latent context on each side, then crop, so the VAE sees its edges
     ctx = 4
