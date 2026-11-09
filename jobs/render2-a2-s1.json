@@ -1,0 +1,7 @@
+{
+ "type": "render_blocks",
+ "name": "render2-a2-s1",
+ "angle": 2,
+ "shard": 1,
+ "shards": 10
+}
