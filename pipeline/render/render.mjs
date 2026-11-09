@@ -45,7 +45,7 @@ async function main() {
   const angle = Number(argv.angle ?? 0), size = Number(argv.size ?? 2048);
   const frames = JSON.parse(fs.readFileSync(argv.frames));
   const out = argv.out; fs.mkdirSync(out, { recursive: true });
-  const { browser, page } = await openRenderer({ token });
+  const { browser, page } = await openRenderer({ token, errorTarget: argv.errorTarget ? Number(argv.errorTarget) : undefined });
   for (const [x, y] of frames) {
     const name = `${x}_${y}`;
     if (fs.existsSync(path.join(out, `${name}.png`))) continue;
@@ -54,6 +54,7 @@ async function main() {
     if (!r.settle.ok) { console.error(`incomplete ${name}`, r.settle.stats); continue; } // never keep a frame drawn on missing tiles
     fs.writeFileSync(path.join(out, `${name}.png`), r.rgb);
     fs.writeFileSync(path.join(out, `${name}.h.png`), r.height);
+    fs.writeFileSync(path.join(out, `${name}.json`), JSON.stringify({ seconds: (Date.now() - t) / 1000, settle: r.settle, attribution: r.attribution }));
     console.log(`${name} ${((Date.now() - t) / 1000).toFixed(1)}s`);
   }
   await browser.close();

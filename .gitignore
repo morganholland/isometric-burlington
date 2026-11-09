@@ -8,3 +8,5 @@ teacher/
 .env
 *.safetensors
 __pycache__/
+setup.html
+runs/
