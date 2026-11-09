@@ -217,6 +217,128 @@ def run_teacher_set(job, out, log):
             "skipped": {k: sum(1 for i in items if i.get("skip") == k) for k in {i.get("skip") for i in items if i.get("skip")}}}
 
 
+CAPTION = ("Redraw this exact image as a finished isometric city illustration in the Burlington city-builder style: "
+           "flat colour, crisp dark outlines, tidy textures, bright clear daylight. Keep everything exactly in place.")
+AITK_COMMIT = "beb9482"
+
+
+def train_yaml(name, steps, rank, val_ids):
+    samples = "\n".join(f'          - prompt: "{CAPTION}"\n            ctrl_img: "/root/data/val/{v}.png"' for v in val_ids)
+    return f"""job: extension
+config:
+  name: "{name}"
+  process:
+    - type: diffusion_trainer
+      training_folder: /root/ai-toolkit/output
+      device: cuda:0
+      network: {{type: lora, linear: {rank}, linear_alpha: {rank}}}
+      save: {{dtype: bf16, save_every: 500, max_step_saves_to_keep: 12}}
+      datasets:
+        - folder_path: /root/data/target
+          control_path: /root/data/control
+          caption_ext: txt
+          caption_dropout_rate: 0.0
+          resolution: [1024]
+      train:
+        batch_size: 1
+        steps: {steps}
+        gradient_accumulation: 1
+        train_unet: true
+        train_text_encoder: false
+        gradient_checkpointing: true
+        noise_scheduler: flowmatch
+        timestep_type: weighted
+        optimizer: adamw8bit
+        lr: 1e-4
+        dtype: bf16
+        cache_text_embeddings: true
+      model:
+        arch: qwen_image_2
+        name_or_path: Comfy-Org/Qwen-Image-2.1/diffusion_models/qwen_image_2.1_turbo_int8_convrot.safetensors
+        quantize: true
+        quantize_te: true
+        assistant_lora_path: ostris/qwen_image_2_turbo_training_adapter/qwen_image_2_turbo_training_adapter_v1.safetensors
+        model_kwargs: {{turbo: true}}
+      sample:
+        sampler: flowmatch
+        sample_every: 500
+        width: 1024
+        height: 1024
+        samples:
+{samples}
+        seed: 7
+        walk_seed: false
+        guidance_scale: 1.0
+        sample_steps: 8
+meta: {{name: "{name}", version: "1"}}
+"""
+
+
+def run_train(job, out, log):
+    """Rent one H100 on Vast.ai, train the LoRA there, always delete the machine."""
+    import base64, math
+    import vast
+    name = job["name"]
+    man = [json.loads(r2.get_bytes(f"{p}/manifest.json")) for p in job["pairs"]]
+    val = [f"a{m['angle']}_{it['id']}" for m in man for it in m["items"] if it.get("ok") and it["split"] == "val"]
+    val_ids = val[::max(1, len(val) // 4)][:4]
+    yaml = train_yaml(name, job.get("steps", 3000), job.get("rank", 32), val_ids)
+    (out / "train.yaml").write_text(yaml)
+    credit = vast.credit()
+    max_hours = job.get("max_hours", 3.0)
+    log.write(f"vast credit ${credit}\n"); log.flush()
+    sha = os.environ.get("GITHUB_SHA", "main")
+    onstart = ("cd /root && git clone -q https://github.com/morganholland/isometric-burlington iso && cd iso && "
+               f"git checkout -q {sha} && cp pipeline/remote/sync.py /root/sync.py && "
+               "echo \"$TRAIN_YAML_B64\" | base64 -d > /root/train.yaml && echo \"$CAPTION\" > /root/caption.txt && "
+               "nohup bash pipeline/remote/train.sh > /root/onstart.log 2>&1 &")
+    env = {"RUN": name, "PAIRS": ",".join(job["pairs"]), "AITK_COMMIT": AITK_COMMIT,
+           "TRAIN_YAML_B64": base64.b64encode(yaml.encode()).decode(), "CAPTION": CAPTION,
+           "R2_ENDPOINT": os.environ["R2_ENDPOINT"], "R2_ACCESS_KEY_ID": os.environ["R2_ACCESS_KEY_ID"],
+           "R2_SECRET_ACCESS_KEY": os.environ["R2_SECRET_ACCESS_KEY"]}
+    tried, spent, result = [], 0.0, None
+    for attempt in range(job.get("max_machines", 3)):
+        offs = [o for o in vast.offers(job.get("max_dph", 3.2)) if o["id"] not in tried]
+        if not offs:
+            raise RuntimeError("no H100 offers under the price cap")
+        o = offs[0]; tried.append(o["id"])
+        if credit - spent < o["dph_total"] * max_hours:
+            raise RuntimeError(f"not enough Vast credit for {max_hours} h at ${o['dph_total']:.2f}/h")
+        deadline = int(time.time() + max_hours * 3600)
+        iid = vast.create(o["id"], f"iso-{name}-dl{deadline}", onstart, env)
+        t0 = time.time()
+        log.write(f"machine {iid} on offer {o['id']} ({o['gpu_name']}, ${o['dph_total']:.2f}/h, {o.get('geolocation')})\n"); log.flush()
+        state, last = "starting", time.time()
+        try:
+            while time.time() < deadline:
+                time.sleep(60)
+                try:
+                    box = json.loads(r2.get_bytes(f"runs/{name}/box.json"))
+                except Exception:  # noqa: BLE001
+                    box = {}
+                if box.get("t", 0) >= t0 - 5 and box.get("state") != state:
+                    state = box.get("state"); last = time.time()
+                    log.write(f"{int((time.time()-t0)/60)} min: {state} {box.get('detail','')}\n"); log.flush()
+                    r2.put_json(f"runs/{name}/status.json", {"name": name, "type": "train", "state": "running", "box": state,
+                                                             "machine": iid, "dph": o["dph_total"], "minutes": round((time.time()-t0)/60, 1)})
+                if state in ("done", "failed", "refused"):
+                    break
+                if state == "starting" and time.time() - t0 > 25 * 60:
+                    state = "no boot"; break
+        finally:
+            vast.destroy(iid)
+            hours = (time.time() - t0) / 3600
+            spent += hours * o["dph_total"]
+            log.write(f"machine {iid} deleted after {hours*60:.0f} min, ~${hours*o['dph_total']:.2f}\n"); log.flush()
+        if state in ("refused", "no boot"):
+            continue
+        result = state
+        break
+    if result != "done":
+        raise RuntimeError(f"training ended: {result}; spent ~${spent:.2f}")
+    return {"state": result, "vast_spent_estimate": round(spent, 2), "val": val_ids}
+
+
 def main(path):
     job = json.loads(Path(path).read_text())
     name = job["name"]
@@ -227,7 +349,7 @@ def main(path):
     r2.put_json(f"runs/{name}/status.json", status)
     log = open(out / "log.txt", "w")
     try:
-        result = {"render": run_render, "probe": run_probe, "teacher_test": run_teacher_test, "teacher_set": run_teacher_set}[job["type"]](job, out, log)
+        result = {"render": run_render, "probe": run_probe, "teacher_test": run_teacher_test, "teacher_set": run_teacher_set, "train": run_train}[job["type"]](job, out, log)
         status.update(state="done", result=result)
     except Exception:
         status.update(state="failed", error=traceback.format_exc()[-3000:])
