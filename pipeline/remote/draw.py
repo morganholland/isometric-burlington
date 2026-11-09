@@ -54,10 +54,17 @@ def load_model(lora_path):
     from toolkit.lora_special import LoRASpecialNetwork
     from safetensors.torch import load_file
     from extensions_built_in.diffusion_models.qwen_image_2 import QwenImage2Model
+    # ModelConfig's dtype defaults to float16, which would leave the VAE in fp16 while reference images are
+    # encoded in bf16 (encode_condition_images uses the model dtype). Training ran everything in bf16.
     cfg = ModelConfig(arch="qwen_image_2", quantize=True, qtype="convrot8", quantize_te=True, qtype_te="convrot8", model_kwargs={"turbo": True},
+                      dtype="bf16", vae_dtype="bf16", te_dtype="bf16",
                       name_or_path="Comfy-Org/Qwen-Image-2.1/diffusion_models/qwen_image_2.1_turbo_int8_convrot.safetensors")
     model = QwenImage2Model(device="cuda:0", model_config=cfg, dtype="bf16")
     model.load_model()
+    model.vae.to(model.device_torch, dtype=model.torch_dtype)
+    model.vae_torch_dtype = model.torch_dtype
+    vd = next(model.vae.parameters()).dtype
+    assert vd == model.torch_dtype, f"VAE is {vd}, model is {model.torch_dtype}"
     sd = load_file(lora_path)
     dim = int(sd[next(k for k in sd if k.endswith("lora_A.weight") or k.endswith("lora_down.weight"))].shape[0])
     sd = {k.replace("diffusion_model.", "transformer."): v for k, v in sd.items()}
