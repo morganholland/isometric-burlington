@@ -8,7 +8,7 @@ Checks (all free, no model involved):
   neon    - share of over-saturated green pixels (the "neon park" failure)
   water   - lake pixels (flat, at lake level in the height map) stay water-coloured
 """
-import base64, io, json, os, time
+import base64, random, io, json, os, time
 import numpy as np
 import requests
 from PIL import Image, ImageFilter
@@ -35,31 +35,37 @@ STYLES = {
 }
 
 
-def call_openai(model, render_png, prompt, quality="high", size="1024x1024", retries=3):
+class NotBilled(RuntimeError):
+    """OpenAI turned the request away (rate limit / overload) before generating anything."""
+
+
+def call_openai(model, render_png, prompt, quality="high", size="1024x1024", retries=6, timeout=600):
+    data = {"model": model, "prompt": prompt, "size": size, "quality": quality, "n": "1",
+            "input_fidelity": "high", "output_format": "png"}
+    r = None
     for attempt in range(retries):
-        r = requests.post(
-            "https://api.openai.com/v1/images/edits",
-            headers={"Authorization": f"Bearer {os.environ['OPENAI_API_KEY']}"},
-            files={"image": ("render.png", render_png, "image/png")},
-            data={"model": model, "prompt": prompt, "size": size, "quality": quality, "n": "1",
-                  "input_fidelity": "high", "output_format": "png"},
-            timeout=300,
-        )
-        if r.status_code == 400 and "input_fidelity" in r.text:   # model without that option
-            r = requests.post(
-                "https://api.openai.com/v1/images/edits",
-                headers={"Authorization": f"Bearer {os.environ['OPENAI_API_KEY']}"},
-                files={"image": ("render.png", render_png, "image/png")},
-                data={"model": model, "prompt": prompt, "size": size, "quality": quality, "n": "1", "output_format": "png"},
-                timeout=300)
+        r = requests.post("https://api.openai.com/v1/images/edits",
+                          headers={"Authorization": f"Bearer {os.environ['OPENAI_API_KEY']}"},
+                          files={"image": ("render.png", render_png, "image/png")}, data=data, timeout=timeout)
+        if r.status_code == 400 and "input_fidelity" in r.text and "input_fidelity" in data:   # model without that option
+            data.pop("input_fidelity"); continue
         if r.ok:
             j = r.json()
-            img = base64.b64decode(j["data"][0]["b64_json"])
-            return img, j.get("usage", {})
+            return base64.b64decode(j["data"][0]["b64_json"]), j.get("usage", {})
         if r.status_code in (429, 500, 502, 503) and attempt < retries - 1:
-            time.sleep(10 * (attempt + 1))
+            if r.status_code == 429 and "quota" in r.text.lower():
+                break                                   # out of credit: waiting will not help
+            try:
+                wait = float(r.headers.get("retry-after", 0))
+            except ValueError:
+                wait = 0
+            time.sleep(max(wait, min(240, 20 * 2 ** attempt)) + random.uniform(0, 10))
             continue
-        raise RuntimeError(f"OpenAI {r.status_code}: {r.text[:400]}")
+        break
+    msg = f"OpenAI {r.status_code}: {r.text[:400]}"
+    if r.status_code in (429, 503):
+        raise NotBilled(msg)
+    raise RuntimeError(msg)
 
 
 # ---------------- checks ----------------

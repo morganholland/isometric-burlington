@@ -181,6 +181,36 @@ def run_teacher_set(job, out, log):
             water_heavy["n"] += 1
         items.append({"id": name, "level": level, "water": round(ws, 3), "split": "val" if i % 20 == 19 else "train"})
     (out / "pairs").mkdir(exist_ok=True)
+    name = job["name"]
+    stop_at = JOB_START + job.get("stop_minutes", 315) * 60     # well inside the 355-minute GitHub timeout
+    manifest = {"angle": a, "model": job["model"], "look": job["look"], "calls": 0, "items": items, "partial": True}
+
+    def save_manifest():
+        # the training box reads only ok items, so a partial manifest is always usable
+        body = None
+        for _ in range(5):              # other threads may be adding to an item while we serialise
+            try:
+                with lock:
+                    manifest["calls"] = calls["n"]
+                    body = json.dumps(manifest, indent=1)
+                break
+            except RuntimeError:
+                time.sleep(0.2)
+        if body is None:
+            return
+        (out / "manifest.json").write_text(body)
+        try:
+            r2.put_bytes(f"runs/{name}/manifest.json", body.encode(), "application/json")
+        except Exception as e:  # noqa: BLE001
+            log.write(f"manifest upload failed: {e}\n"); log.flush()
+
+    def keep(path, data):
+        path.write_bytes(data)
+        for i in range(4):
+            try:
+                r2.put_bytes(f"runs/{name}/pairs/{path.name}", data, "image/png"); return
+            except Exception as e:  # noqa: BLE001
+                log.write(f"upload {path.name} failed: {e}\n"); time.sleep(5 * (i + 1))
 
     def one(it):
         if "skip" in it:
@@ -194,28 +224,37 @@ def run_teacher_set(job, out, log):
             with lock:
                 if calls["n"] >= max_calls:
                     it["skip"] = "call cap reached"; return it
+                if time.time() > stop_at:
+                    it["skip"] = "out of time"; return it
                 calls["n"] += 1
             try:
                 img, _ = teacher.call_openai(job["model"], buf.getvalue(), teacher.STYLES[job["look"]])
+            except teacher.NotBilled as e:
+                with lock:
+                    calls["n"] -= 1              # refused before any work: costs nothing
+                it["attempts"].append({"error": str(e)[:200], "billed": False}); continue
             except Exception as e:  # noqa: BLE001
                 it["attempts"].append({"error": str(e)[:200]}); continue
             chk = teacher.check(rgb, Image.open(io.BytesIO(img)), hm, it["level"])
             it["attempts"].append(chk)
             if chk["pass"]:
-                rgb.save(out / "pairs" / f"{it['id']}.render.png")
-                (out / "pairs" / f"{it['id']}.target.png").write_bytes(img)
+                b = io.BytesIO(); rgb.save(b, "PNG")
+                keep(out / "pairs" / f"{it['id']}.render.png", b.getvalue())
+                keep(out / "pairs" / f"{it['id']}.target.png", img)
                 it["ok"] = True
+                save_manifest()
                 return it
             (out / "pairs" / f"{it['id']}.reject{t}.png").write_bytes(img)
         return it
 
-    with ThreadPoolExecutor(job.get("threads", 4)) as ex:
-        items = list(ex.map(one, items))
-    manifest = {"angle": a, "model": job["model"], "look": job["look"], "calls": calls["n"], "items": items}
-    (out / "manifest.json").write_text(json.dumps(manifest, indent=1))
+    with ThreadPoolExecutor(job.get("threads", 2)) as ex:
+        items[:] = list(ex.map(one, items))
+    manifest["partial"] = False
+    save_manifest()
     ok = [i for i in items if i.get("ok")]
     return {"frames": len(fr), "pairs": len(ok), "val": sum(1 for i in ok if i["split"] == "val"),
             "calls": calls["n"], "calls_per_pair": round(calls["n"] / max(1, len(ok)), 2),
+            "errors": sum(1 for i in items for t in i.get("attempts", []) if "error" in t),
             "skipped": {k: sum(1 for i in items if i.get("skip") == k) for k in {i.get("skip") for i in items if i.get("skip")}}}
 
 
