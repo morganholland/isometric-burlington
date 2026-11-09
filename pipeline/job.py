@@ -35,6 +35,38 @@ def run_render(job, out, log):
     return {"frames": len(frames), "rendered": len(list((out / "frames").glob("*_*.png"))) // 2}
 
 
+def run_probe(job, out, log):
+    import requests
+    res = {}
+    # OpenAI: which image models this key can use (no image is generated, no cost)
+    r = requests.get("https://api.openai.com/v1/models", headers={"Authorization": f"Bearer {os.environ['OPENAI_API_KEY']}"}, timeout=30)
+    res["openai_status"] = r.status_code
+    if r.ok:
+        res["openai_image_models"] = sorted(m["id"] for m in r.json()["data"] if "image" in m["id"] or "dall" in m["id"])
+    else:
+        res["openai_error"] = r.text[:300]
+    # Vast.ai: balance and current H100 offers (read only)
+    vh = {"Authorization": f"Bearer {os.environ['VAST_API_KEY']}"}
+    u = requests.get("https://console.vast.ai/api/v0/users/current/", headers=vh, timeout=30)
+    res["vast_status"] = u.status_code
+    if u.ok:
+        res["vast_credit"] = u.json().get("credit")
+    q = {"gpu_name": {"in": ["H100 SXM", "H100 PCIE", "H100 NVL"]}, "rentable": {"eq": True}, "verified": {"eq": True},
+         "num_gpus": {"eq": 1}, "reliability2": {"gte": 0.98}, "disk_space": {"gte": 150}, "inet_down": {"gte": 500},
+         "order": [["dph_total", "asc"]], "type": "on-demand", "limit": 15}
+    o = requests.post("https://console.vast.ai/api/v0/bundles/", headers=vh, json=q, timeout=30)
+    if o.ok:
+        res["vast_h100_offers"] = [{k: x.get(k) for k in ("id", "gpu_name", "dph_total", "reliability2", "inet_down", "geolocation", "cuda_max_good", "disk_space")} for x in o.json().get("offers", [])]
+    else:
+        res["vast_offers_error"] = o.text[:300]
+    # Cesium: does the token reach the Google tiles asset?
+    c = requests.get("https://api.cesium.com/v1/assets/2275207/endpoint", params={"access_token": os.environ["CESIUM_ION_TOKEN"]}, timeout=30)
+    res["cesium_status"] = c.status_code
+    res["cesium_type"] = c.json().get("externalType") if c.ok else c.text[:200]
+    log.write(json.dumps(res, indent=1))
+    return res
+
+
 def main(path):
     job = json.loads(Path(path).read_text())
     name = job["name"]
@@ -45,7 +77,7 @@ def main(path):
     r2.put_json(f"runs/{name}/status.json", status)
     log = open(out / "log.txt", "w")
     try:
-        result = {"render": run_render}[job["type"]](job, out, log)
+        result = {"render": run_render, "probe": run_probe}[job["type"]](job, out, log)
         status.update(state="done", result=result)
     except Exception:
         status.update(state="failed", error=traceback.format_exc()[-3000:])
