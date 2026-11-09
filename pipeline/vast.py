@@ -13,11 +13,11 @@ H = lambda: {"Authorization": f"Bearer {os.environ['VAST_API_KEY']}"}
 IMAGE = "ostris/aitoolkit:0.13.41"
 
 
-def _req(method, path, retries=4, **kw):
+def _req(method, path, retries=4, url=None, **kw):
     last = None
     for i in range(retries):
         try:
-            r = requests.request(method, f"{API}{path}", headers=H(), timeout=45, **kw)
+            r = requests.request(method, url or f"{API}{path}", headers=H(), timeout=45, **kw)
             if r.status_code in (429, 500, 502, 503, 504):
                 last = RuntimeError(f"vast {method} {path}: {r.status_code} {r.text[:200]}")
             else:
@@ -75,8 +75,18 @@ def destroy(iid):
 
 
 def mine():
-    r = _req("GET", "/instances/", params={"owner": "me"}); r.raise_for_status()
-    return r.json().get("instances", [])
+    """All our instances. Vast retired GET /api/v0/instances/ (410 Gone) for the paginated v1 list."""
+    import json as _json
+    rows, params = [], {"select_filters": {}, "order_by": [{"col": "id", "dir": "asc"}], "limit": 25}
+    for _ in range(40):
+        q = {k: (v if isinstance(v, str) else _json.dumps(v)) for k, v in params.items()}
+        r = _req("GET", "", url="https://console.vast.ai/api/v1/instances/", params=q); r.raise_for_status()
+        j = r.json()
+        rows += j.get("instances") or []
+        if not j.get("next_token"):
+            break
+        params["after_token"] = j["next_token"]
+    return rows
 
 
 def destroy_labelled(label=None, prefix=None):
