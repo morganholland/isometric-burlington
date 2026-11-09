@@ -30,11 +30,11 @@ trap 'rc=$?; status failed "train.sh stopped early (rc=$rc), see run.log"; pytho
 status booted
 nvidia-smi --query-gpu=name,driver_version,power.limit,power.default_limit --format=csv,noheader || true
 
-# 1. refuse a slow or power-capped GPU ([N/A] readings are allowed through)
+# 1. refuse a badly power-capped GPU (RTX PRO 6000 hosts often cap 600 W cards at 400-450 W: ~10-15% slower, fine) ([N/A] readings are allowed through)
 read -r PL PD <<<"$(nvidia-smi --query-gpu=power.limit,power.default_limit --format=csv,noheader,nounits | head -1 | tr -d ' ' | tr ',' ' ')"
 echo "gpu power limit ${PL} W of default ${PD} W"
 if python3 -c "import sys
-try: sys.exit(0 if float('$PL') >= 0.9*float('$PD') else 1)
+try: sys.exit(0 if float('$PL') >= 0.65*float('$PD') else 1)
 except ValueError: sys.exit(0)"; then :; else
   trap - EXIT; status refused "GPU power capped at ${PL} W (default ${PD} W)"; exit 3; fi
 
