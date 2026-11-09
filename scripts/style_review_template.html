@@ -1,0 +1,128 @@
+<title>Burlington Style Test</title>
+<meta name="claude:viewport-fit-sides" content="cover">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,700&family=IBM+Plex+Sans:wght@400;500;600&family=IBM+Plex+Mono:wght@500&display=swap">
+<style>
+/* Layout: header with the choice, then one row per Burlington spot: the render, then each look. A filter shows one look at a time on phones. Palette shared with the setup page. */
+:root{
+  --page:#eef2f3; --surface:#e3e9ec; --raised:#fbfcfc; --ink:#13202a; --body:#2a3a44; --secondary:#55656f;
+  --rule:#d3dce0; --rule-strong:#b3c1c8; --brick:#b8462d; --on-brick:#fff; --tint:#f4e3dc;
+  --done:#26704b; --done-tint:#dcefe4; --bad:#9a3a24; --bad-tint:#f6e1da; --focus:#1d5c86;
+  --display:"Bricolage Grotesque","Avenir Next",system-ui,sans-serif;
+  --sans:"IBM Plex Sans",system-ui,-apple-system,"Segoe UI",Roboto,sans-serif;
+  --mono:"IBM Plex Mono",ui-monospace,Menlo,monospace;
+}
+@media (prefers-color-scheme:dark){:root:not([data-theme="light"]){
+  --page:#0f171c; --surface:#18232a; --raised:#1c2830; --ink:#e7eef1; --body:#cdd8dd; --secondary:#9aabb4;
+  --rule:#2a3943; --rule-strong:#40525d; --brick:#e0714f; --on-brick:#1a0d08; --tint:#3a221a;
+  --done:#78cfa0; --done-tint:#17311f; --bad:#f0997c; --bad-tint:#3a221a; --focus:#76b6e2; color-scheme:dark}}
+:root[data-theme="dark"]{
+  --page:#0f171c; --surface:#18232a; --raised:#1c2830; --ink:#e7eef1; --body:#cdd8dd; --secondary:#9aabb4;
+  --rule:#2a3943; --rule-strong:#40525d; --brick:#e0714f; --on-brick:#1a0d08; --tint:#3a221a;
+  --done:#78cfa0; --done-tint:#17311f; --bad:#f0997c; --bad-tint:#3a221a; --focus:#76b6e2; color-scheme:dark}
+*{box-sizing:border-box}
+body{margin:0;background:var(--page);color:var(--body);font:16px/1.55 var(--sans)}
+.wrap{max-width:1280px;margin:0 auto;display:grid;gap:24px;padding-block:32px 72px;
+  padding-left:max(16px,env(safe-area-inset-left,0px));padding-right:max(16px,env(safe-area-inset-right,0px))}
+h1,h2{color:var(--ink);margin:0;text-wrap:balance}
+.eyebrow{font:500 13px var(--mono);letter-spacing:.06em;text-transform:uppercase;color:var(--secondary)}
+h1{font:700 clamp(28px,5vw,38px)/1.1 var(--display);letter-spacing:-.015em}
+.intro{display:grid;gap:10px;max-width:70ch}
+.intro ul{margin:0;padding-left:20px;font-size:15px}
+.choose{background:var(--raised);border:1px solid var(--rule);border-radius:14px;padding:20px;display:grid;gap:14px}
+.choose h2{font-size:19px}
+.opts{display:flex;flex-wrap:wrap;gap:10px}
+.opt{display:flex;align-items:center;gap:8px;padding:10px 14px;border:1px solid var(--rule-strong);border-radius:10px;cursor:pointer;background:var(--page);font-weight:500;color:var(--ink)}
+.opt input{accent-color:var(--brick);width:18px;height:18px;margin:0}
+.opt:has(input:checked){border-color:var(--brick);background:var(--tint)}
+textarea{width:100%;font:15px var(--sans);padding:10px 12px;border-radius:10px;border:1px solid var(--rule-strong);background:var(--page);color:var(--ink)}
+.block{display:grid;border:1px solid var(--rule-strong);border-radius:10px;overflow:hidden;background:var(--page)}
+.block pre{margin:0;padding:14px 16px;font:14px/1.6 var(--mono);color:var(--ink);white-space:pre-wrap;min-height:3em}
+.copy{min-height:46px;border:0;border-top:1px solid var(--rule-strong);background:var(--tint);color:var(--ink);font:500 15px var(--sans);cursor:pointer}
+.copy.is-copied{background:var(--done-tint);color:var(--done)}
+.filter{display:flex;gap:8px;flex-wrap:wrap;align-items:center;font-size:14px;color:var(--secondary);position:sticky;top:env(safe-area-inset-top,0px);background:var(--page);padding-block:8px;z-index:2}
+body::before{content:"";position:fixed;inset:0 0 auto;height:env(safe-area-inset-top,0px);background:var(--page);z-index:10}
+.filter button{font:500 14px var(--sans);padding:8px 12px;border-radius:99px;border:1px solid var(--rule-strong);background:var(--raised);color:var(--ink);cursor:pointer}
+.filter button[aria-pressed="true"]{background:var(--ink);color:var(--raised);border-color:var(--ink)}
+.spot{display:grid;gap:10px}
+.spot h2{font:600 18px/1.3 var(--sans)}
+.grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(240px,1fr));gap:10px}
+.cell{margin:0;background:var(--raised);border:1px solid var(--rule);border-radius:10px;overflow:hidden;display:grid;min-width:0}
+.cell.render{border-color:var(--rule-strong)}
+.cell img{width:100%;aspect-ratio:1;object-fit:cover;display:block;cursor:zoom-in}
+.cell figcaption{font-size:13px;padding:8px 10px;display:flex;flex-wrap:wrap;gap:6px;align-items:center;color:var(--ink)}
+.ok,.bad{font:500 11.5px var(--mono);padding:2px 7px;border-radius:99px}
+.ok{background:var(--done-tint);color:var(--done)}
+.bad{background:var(--bad-tint);color:var(--bad)}
+.gap{aspect-ratio:1;display:grid;place-items:center;color:var(--secondary);background:var(--surface)}
+body.only-builder .cell[data-look="gouache"],body.only-gouache .cell[data-look="builder"]{display:none}
+dialog{border:0;padding:0;background:transparent;max-width:min(96vw,1024px)}
+dialog::backdrop{background:rgba(5,10,14,.85)}
+dialog img{width:100%;height:auto;display:block;border-radius:8px}
+:focus-visible{outline:2px solid var(--focus);outline-offset:2px}
+</style>
+
+<main class="wrap">
+  <header class="intro">
+    <span class="eyebrow">Isometric Burlington · style test · {{N}} spots</span>
+    <h1>Pick Burlington's look</h1>
+    <p>Each row is one spot in Burlington. On the left is Google's 3D render, the input. The others are the same frame redrawn in two looks by the two versions of GPT Image 2.6. Whichever look you pick, about 400 drawings like it will teach the open model that draws the whole map. Tap any picture to see it full size.</p>
+    <ul>{{SUMMARY}}</ul>
+    <p style="font-size:14px;color:var(--secondary)">"Passes checks" means the drawing stays on top of the render, keeps its outlines, colours and water. A failed drawing is never used for training, so a few failures are fine; the look matters more.</p>
+  </header>
+
+  <section class="choose" aria-labelledby="ch">
+    <h2 id="ch">Your call</h2>
+    <div class="opts" role="radiogroup" aria-label="Look">
+      <label class="opt"><input type="radio" name="look" value="City-builder"> City-builder</label>
+      <label class="opt"><input type="radio" name="look" value="Storybook gouache"> Storybook gouache</label>
+      <label class="opt"><input type="radio" name="look" value="Neither, try something else"> Neither</label>
+    </div>
+    <label for="notes" style="font-size:14px;font-weight:600;color:var(--ink)">Anything to change (optional)</label>
+    <textarea id="notes" rows="2" placeholder="For example: brighter water, less outline, warmer roofs"></textarea>
+    <div class="block"><pre id="reply" aria-live="polite"></pre><button class="copy" type="button" id="copy">Copy my reply</button></div>
+  </section>
+
+  <div class="filter" role="group" aria-label="Show">
+    Show:
+    <button type="button" data-f="all" aria-pressed="true">Both looks</button>
+    <button type="button" data-f="builder" aria-pressed="false">City-builder</button>
+    <button type="button" data-f="gouache" aria-pressed="false">Storybook gouache</button>
+  </div>
+
+  {{SPOTS}}
+</main>
+<dialog id="zoom"><img alt=""></dialog>
+
+<script>
+(function(){
+  var $=function(s){return document.querySelector(s);};
+  function reply(){
+    var l=document.querySelector('input[name=look]:checked');
+    var n=$('#notes').value.trim();
+    var t=l?('Style test: go with '+l.value+'.'+(n?'\nChanges: '+n:'')):'';
+    $('#reply').textContent=t; $('#copy').disabled=!t;
+  }
+  document.querySelectorAll('input[name=look]').forEach(function(i){i.addEventListener('change',reply);});
+  $('#notes').addEventListener('input',reply);
+  $('#copy').addEventListener('click',function(e){
+    var b=e.currentTarget,t=$('#reply').textContent;
+    function ok(){b.textContent='Copied';b.classList.add('is-copied');setTimeout(function(){b.textContent='Copy my reply';b.classList.remove('is-copied');},1600);}
+    function sel(){var r=document.createRange();r.selectNodeContents($('#reply'));var s=getSelection();s.removeAllRanges();s.addRange(r);b.textContent='Selected: press copy';}
+    try{navigator.clipboard.writeText(t).then(ok,sel);}catch(err){sel();}
+  });
+  document.querySelectorAll('.filter button').forEach(function(b){b.addEventListener('click',function(){
+    document.querySelectorAll('.filter button').forEach(function(x){x.setAttribute('aria-pressed',String(x===b));});
+    document.body.classList.remove('only-builder','only-gouache');
+    if(b.dataset.f!=='all')document.body.classList.add('only-'+b.dataset.f);
+  });});
+  var dlg=$('#zoom');
+  document.addEventListener('click',function(e){
+    var img=e.target.closest('.cell img');
+    if(img){dlg.querySelector('img').src=img.src;dlg.querySelector('img').alt=img.alt;dlg.showModal();return;}
+    if(e.target===dlg||e.target.closest('dialog'))dlg.close();
+  });
+  reply();
+})();
+</script>
