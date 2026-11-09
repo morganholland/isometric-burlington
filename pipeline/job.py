@@ -109,6 +109,22 @@ def run_teacher_test(job, out, log):
             "errors": [r["error"] for r in results if "error" in r][:5]}
 
 
+def run_ls(job, out, log):
+    """List R2 keys under a prefix (the public bucket address cannot list)."""
+    keys, tok = [], None
+    while True:
+        kw = {"Bucket": r2.BUCKET, "Prefix": job["prefix"], "MaxKeys": 1000}
+        if tok:
+            kw["ContinuationToken"] = tok
+        r = r2.client().list_objects_v2(**kw)
+        keys += [[o["Key"], o["Size"]] for o in r.get("Contents", [])]
+        if not r.get("IsTruncated"):
+            break
+        tok = r["NextContinuationToken"]
+    (out / "keys.json").write_text(json.dumps(keys))
+    return {"prefix": job["prefix"], "count": len(keys)}
+
+
 def run_probe(job, out, log):
     import requests
     res = {}
@@ -564,7 +580,7 @@ def main(path):
     r2.put_json(f"runs/{name}/status.json", status)
     log = open(out / "log.txt", "w")
     try:
-        result = {"render": run_render, "probe": run_probe, "teacher_test": run_teacher_test, "teacher_set": run_teacher_set, "train": run_train, "render_blocks": run_render_blocks}[job["type"]](job, out, log)
+        result = {"render": run_render, "probe": run_probe, "teacher_test": run_teacher_test, "teacher_set": run_teacher_set, "train": run_train, "render_blocks": run_render_blocks, "ls": run_ls}[job["type"]](job, out, log)
         status.update(state="done", result=result)
     except Exception:
         status.update(state="failed", error=traceback.format_exc()[-3000:])
