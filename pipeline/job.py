@@ -183,72 +183,103 @@ def run_teacher_set(job, out, log):
     (out / "pairs").mkdir(exist_ok=True)
     name = job["name"]
     stop_at = JOB_START + job.get("stop_minutes", 315) * 60     # well inside the 355-minute GitHub timeout
+    state = {"inflight": 0, "stop": None}                        # stop: reason every remaining item is skipped
     manifest = {"angle": a, "model": job["model"], "look": job["look"], "calls": 0, "items": items, "partial": True}
 
     def save_manifest():
+        # items are only ever replaced whole, under the lock, so this snapshot is consistent;
         # the training box reads only ok items, so a partial manifest is always usable
-        body = None
-        for _ in range(5):              # other threads may be adding to an item while we serialise
-            try:
-                with lock:
-                    manifest["calls"] = calls["n"]
-                    body = json.dumps(manifest, indent=1)
-                break
-            except RuntimeError:
-                time.sleep(0.2)
-        if body is None:
-            return
+        with lock:
+            manifest["calls"] = calls["n"]
+            body = json.dumps(manifest, indent=1)
         (out / "manifest.json").write_text(body)
-        try:
-            r2.put_bytes(f"runs/{name}/manifest.json", body.encode(), "application/json")
-        except Exception as e:  # noqa: BLE001
-            log.write(f"manifest upload failed: {e}\n"); log.flush()
+        for i in range(3):
+            try:
+                r2.put_bytes(f"runs/{name}/manifest.json", body.encode(), "application/json"); return
+            except Exception as e:  # noqa: BLE001
+                log.write(f"manifest upload failed: {e}\n"); log.flush(); time.sleep(5 * (i + 1))
 
     def keep(path, data):
         path.write_bytes(data)
         for i in range(4):
             try:
-                r2.put_bytes(f"runs/{name}/pairs/{path.name}", data, "image/png"); return
+                r2.put_bytes(f"runs/{name}/pairs/{path.name}", data, "image/png"); return True
             except Exception as e:  # noqa: BLE001
-                log.write(f"upload {path.name} failed: {e}\n"); time.sleep(5 * (i + 1))
+                log.write(f"upload {path.name} failed: {e}\n"); log.flush(); time.sleep(5 * (i + 1))
+        return False
 
-    def one(it):
+    def take_call():
+        """Reserve one billed call, or return why not. Waits while in-flight calls may still be refused."""
+        while True:
+            with lock:
+                if state["stop"]:
+                    return state["stop"]
+                if time.time() > stop_at:
+                    return "out of time"
+                if calls["n"] < max_calls:
+                    calls["n"] += 1; state["inflight"] += 1
+                    return None
+                if state["inflight"] == 0:
+                    return "call cap reached"
+            time.sleep(2)
+
+    def draw(it):
         if "skip" in it:
             return it
+        it = dict(it, attempts=[])
         rgba = Image.open(out / "renders" / f"{it['id']}.png")
         rgb = Image.new("RGB", rgba.size, (0, 0, 0)); rgb.paste(rgba, mask=rgba.getchannel("A"))
         buf = io.BytesIO(); rgb.save(buf, "PNG")
         hm = teacher.heights(str(out / "renders" / f"{it['id']}.h.png"))
-        it["attempts"] = []
-        for t in range(job.get("tries", 3)):
-            with lock:
-                if calls["n"] >= max_calls:
-                    it["skip"] = "call cap reached"; return it
-                if time.time() > stop_at:
-                    it["skip"] = "out of time"; return it
-                calls["n"] += 1
+        billed, refused = 0, 0
+        while billed < job.get("tries", 3) and refused < 6:
+            why = take_call()
+            if why:
+                it["skip"] = why; return it
             try:
-                img, _ = teacher.call_openai(job["model"], buf.getvalue(), teacher.STYLES[job["look"]])
+                img, _ = teacher.call_openai(job["model"], buf.getvalue(), teacher.STYLES[job["look"]], deadline=stop_at)
             except teacher.NotBilled as e:
                 with lock:
-                    calls["n"] -= 1              # refused before any work: costs nothing
-                it["attempts"].append({"error": str(e)[:200], "billed": False}); continue
+                    calls["n"] -= 1; state["inflight"] -= 1     # refused before any work: costs nothing
+                    if isinstance(e, teacher.OutOfQuota):
+                        state["stop"] = "OpenAI credit ran out"
+                it["attempts"].append({"error": str(e)[:200], "billed": False}); refused += 1; continue
             except Exception as e:  # noqa: BLE001
-                it["attempts"].append({"error": str(e)[:200]}); continue
-            chk = teacher.check(rgb, Image.open(io.BytesIO(img)), hm, it["level"])
+                with lock:
+                    state["inflight"] -= 1
+                it["attempts"].append({"error": str(e)[:200]}); billed += 1; continue
+            with lock:
+                state["inflight"] -= 1
+            billed += 1
+            try:
+                chk = teacher.check(rgb, Image.open(io.BytesIO(img)), hm, it["level"])
+            except Exception as e:  # noqa: BLE001  (unreadable image)
+                it["attempts"].append({"error": f"check: {e}"[:200]}); continue
             it["attempts"].append(chk)
             if chk["pass"]:
                 b = io.BytesIO(); rgb.save(b, "PNG")
-                keep(out / "pairs" / f"{it['id']}.render.png", b.getvalue())
-                keep(out / "pairs" / f"{it['id']}.target.png", img)
-                it["ok"] = True
-                save_manifest()
+                if keep(out / "pairs" / f"{it['id']}.render.png", b.getvalue()) and keep(out / "pairs" / f"{it['id']}.target.png", img):
+                    it["ok"] = True
+                else:
+                    it["skip"] = "upload failed"
                 return it
-            (out / "pairs" / f"{it['id']}.reject{t}.png").write_bytes(img)
+            (out / "pairs" / f"{it['id']}.reject{billed - 1}.png").write_bytes(img)
+        if refused >= 6:
+            it["skip"] = "refused by OpenAI"
         return it
 
+    def one(idx):
+        try:
+            res = draw(items[idx])
+        except Exception as e:  # noqa: BLE001
+            res = dict(items[idx], skip=f"error: {e}"[:200])
+        with lock:
+            items[idx] = res
+        if res.get("ok"):
+            save_manifest()
+
     with ThreadPoolExecutor(job.get("threads", 2)) as ex:
-        items[:] = list(ex.map(one, items))
+        list(ex.map(one, range(len(items))))
     manifest["partial"] = False
     save_manifest()
     ok = [i for i in items if i.get("ok")]

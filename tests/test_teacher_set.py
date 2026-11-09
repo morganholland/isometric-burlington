@@ -28,11 +28,13 @@ def setup(monkeypatch, tmp_path, outcomes):
     monkeypatch.setattr(teacher, "lake_level", lambda e, n: 29.0)
     n = {"calls": 0}
 
-    def fake_call(model, png, prompt):
+    def fake_call(model, png, prompt, deadline=None):
         n["calls"] += 1
         o = outcomes(n["calls"])
         if o == "refused":
             raise teacher.NotBilled("OpenAI 429: rate limit")
+        if o == "quota":
+            raise teacher.OutOfQuota("OpenAI 429: insufficient quota")
         if o == "error":
             raise RuntimeError("OpenAI 500")
         b = __import__("io").BytesIO(); Image.new("RGB", (8, 8), (1, 2, 3) if o == "pass" else (9, 9, 9)).save(b, "PNG")
@@ -126,3 +128,62 @@ def test_openai_drops_unsupported_fidelity(monkeypatch):
     teacher, sleeps, sent = _fake_requests(monkeypatch, [(400, "unknown parameter input_fidelity", {}), (200, "", {})])
     teacher.call_openai("m", b"png", "p")
     assert "input_fidelity" in sent[0] and "input_fidelity" not in sent[1]
+
+
+def test_failed_upload_is_never_marked_ok(monkeypatch, tmp_path):
+    job, store, n, out, log = setup(monkeypatch, tmp_path, lambda c: "pass")
+    monkeypatch.setattr(job.time, "sleep", lambda s: None)
+    good = job.r2.put_bytes
+
+    def flaky(k, d, ct=None):
+        if k.endswith("/0_0.target.png"):
+            raise OSError("R2 down")
+        good(k, d, ct)
+    job.r2.put_bytes = flaky
+    r = job.run_teacher_set(spec(), out, log)
+    man = json.loads(store["runs/ts/manifest.json"])
+    bad = next(i for i in man["items"] if i["id"] == "0_0")
+    assert not bad.get("ok") and bad["skip"] == "upload failed" and r["pairs"] == 5
+
+
+def test_out_of_credit_stops_the_whole_job(monkeypatch, tmp_path):
+    job, store, n, out, log = setup(monkeypatch, tmp_path, lambda c: "pass" if c == 1 else "quota")
+    r = job.run_teacher_set(spec(threads=1), out, log)
+    assert n["calls"] == 2 and r["pairs"] == 1 and r["calls"] == 1
+    assert r["skipped"] == {"OpenAI credit ran out": 5}
+
+
+def test_refusals_do_not_use_up_tries(monkeypatch, tmp_path):
+    # each item: 4 refusals then a pass -> still drawn, though tries=3
+    job, store, n, out, log = setup(monkeypatch, tmp_path, lambda c: "pass" if c % 5 == 0 else "refused")
+    r = job.run_teacher_set(spec(frames=2, threads=1), out, log)
+    assert r["pairs"] == 2 and r["calls"] == 2
+
+
+def test_endless_refusals_end_the_item(monkeypatch, tmp_path):
+    job, store, n, out, log = setup(monkeypatch, tmp_path, lambda c: "refused")
+    r = job.run_teacher_set(spec(frames=2, threads=1), out, log)
+    assert r["skipped"] == {"refused by OpenAI": 2} and r["calls"] == 0 and n["calls"] == 12
+
+
+def test_bad_image_bytes_do_not_kill_the_run(monkeypatch, tmp_path):
+    import teacher
+    job, store, n, out, log = setup(monkeypatch, tmp_path, lambda c: "pass")
+    monkeypatch.setattr(teacher, "call_openai", lambda *a, **k: (b"not a png", {}))
+    r = job.run_teacher_set(spec(frames=2, max_calls=6), out, log)
+    assert r["pairs"] == 0 and r["calls"] == 6
+    assert json.loads(store["runs/ts/manifest.json"])["partial"] is False
+
+
+def test_openai_never_waits_past_the_deadline(monkeypatch):
+    import time as _t
+    teacher, sleeps, _ = _fake_requests(monkeypatch, [(429, "rate limit", {"retry-after": "3600"})])
+    with pytest.raises(teacher.NotBilled):
+        teacher.call_openai("m", b"png", "p", deadline=_t.time() + 400)
+    assert sleeps == []
+
+
+def test_openai_caps_long_retry_after(monkeypatch):
+    teacher, sleeps, _ = _fake_requests(monkeypatch, [(429, "rate limit", {"retry-after": "3600"}), (200, "", {})])
+    teacher.call_openai("m", b"png", "p")
+    assert sleeps and sleeps[0] <= 310

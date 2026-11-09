@@ -39,14 +39,22 @@ class NotBilled(RuntimeError):
     """OpenAI turned the request away (rate limit / overload) before generating anything."""
 
 
-def call_openai(model, render_png, prompt, quality="high", size="1024x1024", retries=6, timeout=600):
+class OutOfQuota(NotBilled):
+    """The OpenAI account has no credit left: no later call will work either."""
+
+
+def call_openai(model, render_png, prompt, quality="high", size="1024x1024", retries=6, timeout=600, deadline=None):
+    """deadline: epoch seconds; no wait or request is started that could run past it."""
     data = {"model": model, "prompt": prompt, "size": size, "quality": quality, "n": "1",
             "input_fidelity": "high", "output_format": "png"}
     r = None
     for attempt in range(retries):
+        left = (deadline - time.time()) if deadline else timeout
+        if left < 120:
+            raise NotBilled("out of time before the request was sent")
         r = requests.post("https://api.openai.com/v1/images/edits",
                           headers={"Authorization": f"Bearer {os.environ['OPENAI_API_KEY']}"},
-                          files={"image": ("render.png", render_png, "image/png")}, data=data, timeout=timeout)
+                          files={"image": ("render.png", render_png, "image/png")}, data=data, timeout=min(timeout, left))
         if r.status_code == 400 and "input_fidelity" in r.text and "input_fidelity" in data:   # model without that option
             data.pop("input_fidelity"); continue
         if r.ok:
@@ -54,15 +62,20 @@ def call_openai(model, render_png, prompt, quality="high", size="1024x1024", ret
             return base64.b64decode(j["data"][0]["b64_json"]), j.get("usage", {})
         if r.status_code in (429, 500, 502, 503) and attempt < retries - 1:
             if r.status_code == 429 and "quota" in r.text.lower():
-                break                                   # out of credit: waiting will not help
+                raise OutOfQuota(f"OpenAI 429: {r.text[:400]}")   # waiting will not help
             try:
                 wait = float(r.headers.get("retry-after", 0))
             except ValueError:
                 wait = 0
-            time.sleep(max(wait, min(240, 20 * 2 ** attempt)) + random.uniform(0, 10))
+            wait = min(300, max(wait, min(240, 20 * 2 ** attempt))) + random.uniform(0, 10)
+            if deadline and time.time() + wait + 120 > deadline:
+                raise NotBilled(f"OpenAI {r.status_code}, and no time left to wait it out")
+            time.sleep(wait)
             continue
         break
     msg = f"OpenAI {r.status_code}: {r.text[:400]}"
+    if r.status_code == 429 and "quota" in r.text.lower():
+        raise OutOfQuota(msg)
     if r.status_code in (429, 503):
         raise NotBilled(msg)
     raise RuntimeError(msg)
