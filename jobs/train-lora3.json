@@ -1,0 +1,1 @@
+{"type": "train", "name": "train-lora3", "pairs": ["runs/teacher-set2-a0", "runs/teacher-set2-a1", "runs/teacher-set2-a2", "runs/teacher-set2-a3"], "steps": 3000, "rank": 32, "max_machines": 3}
