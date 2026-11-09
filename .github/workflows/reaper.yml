@@ -6,8 +6,11 @@ jobs:
   reap:
     runs-on: ubuntu-latest
     timeout-minutes: 5
-    env:
-      VAST_API_KEY: ${{ secrets.VAST_API_KEY }}
     steps:
       - uses: actions/checkout@v4
-      - run: pip install requests && python3 pipeline/reaper.py
+      - uses: actions/setup-python@v5
+        with: { python-version: '3.12' }
+      - run: pip install requests
+      - env:
+          VAST_API_KEY: ${{ secrets.VAST_API_KEY }}
+        run: python3 pipeline/reaper.py

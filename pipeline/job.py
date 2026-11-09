@@ -9,6 +9,8 @@ sys.path.insert(0, str(Path(__file__).parent))
 import geo, r2  # noqa: E402
 
 ROOT = Path(__file__).resolve().parent.parent
+JOB_START = time.time()
+ACTIVE_LABELS = set()
 
 
 def frames_around(angle, lat, lon, n, size, h=35.0):
@@ -261,13 +263,15 @@ AITK_COMMIT = "beb9482"
 
 
 def train_yaml(name, steps, rank, val_ids):
+    if not val_ids:
+        raise RuntimeError("no validation frames: ai-toolkit needs at least one sample image")
     samples = "\n".join(f'          - prompt: "{CAPTION}"\n            ctrl_img: "/root/data/val/{v}.png"' for v in val_ids)
     return f"""job: extension
 config:
   name: "{name}"
   process:
     - type: diffusion_trainer
-      training_folder: /root/ai-toolkit/output
+      training_folder: /root/output
       device: cuda:0
       network: {{type: lora, linear: {rank}, linear_alpha: {rank}}}
       save: {{dtype: bf16, save_every: 500, max_step_saves_to_keep: 12}}
@@ -285,7 +289,7 @@ config:
         train_text_encoder: false
         gradient_checkpointing: true
         noise_scheduler: flowmatch
-        timestep_type: weighted
+        timestep_type: shift
         optimizer: adamw8bit
         lr: 1e-4
         dtype: bf16
@@ -294,7 +298,9 @@ config:
         arch: qwen_image_2
         name_or_path: Comfy-Org/Qwen-Image-2.1/diffusion_models/qwen_image_2.1_turbo_int8_convrot.safetensors
         quantize: true
+        qtype: convrot8
         quantize_te: true
+        qtype_te: convrot8
         assistant_lora_path: ostris/qwen_image_2_turbo_training_adapter/qwen_image_2_turbo_training_adapter_v1.safetensors
         model_kwargs: {{turbo: true}}
       sample:
@@ -312,9 +318,13 @@ meta: {{name: "{name}", version: "1"}}
 """
 
 
+# how long a machine may sit in each state before we give up on it (minutes)
+STALL = {"starting": 25, "booted": 15, "downloading data": 30, "training": None}
+
+
 def run_train(job, out, log):
     """Rent one H100 on Vast.ai, train the LoRA there, always delete the machine."""
-    import base64, math
+    import base64, secrets
     import vast
     name = job["name"]
     man = [json.loads(r2.get_bytes(f"{p}/manifest.json")) for p in job["pairs"]]
@@ -323,57 +333,91 @@ def run_train(job, out, log):
     yaml = train_yaml(name, job.get("steps", 3000), job.get("rank", 32), val_ids)
     (out / "train.yaml").write_text(yaml)
     credit = vast.credit()
-    max_hours = job.get("max_hours", 3.0)
+    max_hours = job.get("max_hours", 3.5)
+    cutoff = JOB_START + 330 * 60          # stay well inside the 355-minute GitHub timeout
     log.write(f"vast credit ${credit}\n"); log.flush()
     sha = os.environ.get("GITHUB_SHA", "main")
-    onstart = ("cd /root && git clone -q https://github.com/morganholland/isometric-burlington iso && cd iso && "
-               f"git checkout -q {sha} && cp pipeline/remote/sync.py /root/sync.py && "
-               "echo \"$TRAIN_YAML_B64\" | base64 -d > /root/train.yaml && echo \"$CAPTION\" > /root/caption.txt && "
-               "nohup bash pipeline/remote/train.sh > /root/onstart.log 2>&1 &")
-    env = {"RUN": name, "PAIRS": ",".join(job["pairs"]), "AITK_COMMIT": AITK_COMMIT,
-           "TRAIN_YAML_B64": base64.b64encode(yaml.encode()).decode(), "CAPTION": CAPTION,
-           "R2_ENDPOINT": os.environ["R2_ENDPOINT"], "R2_ACCESS_KEY_ID": os.environ["R2_ACCESS_KEY_ID"],
-           "R2_SECRET_ACCESS_KEY": os.environ["R2_SECRET_ACCESS_KEY"]}
+
+    def say(msg):
+        log.write(msg + "\n"); log.flush(); print(msg, flush=True)
+
     tried, spent, result = [], 0.0, None
-    for attempt in range(job.get("max_machines", 3)):
+    for attempt in range(job.get("max_machines", 2)):
         offs = [o for o in vast.offers(job.get("max_dph", 3.2)) if o["id"] not in tried]
         if not offs:
             raise RuntimeError("no H100 offers under the price cap")
         o = offs[0]; tried.append(o["id"])
-        if credit - spent < o["dph_total"] * max_hours:
-            raise RuntimeError(f"not enough Vast credit for {max_hours} h at ${o['dph_total']:.2f}/h")
-        deadline = int(time.time() + max_hours * 3600)
-        iid = vast.create(o["id"], f"iso-{name}-dl{deadline}", onstart, env)
+        deadline = int(min(time.time() + max_hours * 3600, cutoff))
+        if credit - spent < o["dph_total"] * (deadline - time.time()) / 3600:
+            raise RuntimeError(f"not enough Vast credit for this run at ${o['dph_total']:.2f}/h")
+        token = secrets.token_hex(6)
+        label = f"iso-{name}-dl{deadline}"
+        onstart = ("rm -rf /root/iso && cd /root && git clone -q https://github.com/morganholland/isometric-burlington iso && "
+                   f"cd iso && git checkout -q {sha} && cp pipeline/remote/sync.py /root/sync.py && "
+                   'echo "$TRAIN_YAML_B64" | base64 -d > /root/train.yaml && echo "$CAPTION_B64" | base64 -d > /root/caption.txt && '
+                   "nohup bash pipeline/remote/train.sh > /root/onstart.log 2>&1 &")
+        env = {"RUN": name, "ATTEMPT": token, "PAIRS": ",".join(job["pairs"]), "AITK_OUTPUT": "/root/output",
+               "TRAIN_YAML_B64": base64.b64encode(yaml.encode()).decode(),
+               "CAPTION_B64": base64.b64encode(CAPTION.encode()).decode(),
+               "R2_ENDPOINT": os.environ["R2_ENDPOINT"], "R2_ACCESS_KEY_ID": os.environ["R2_ACCESS_KEY_ID"],
+               "R2_SECRET_ACCESS_KEY": os.environ["R2_SECRET_ACCESS_KEY"]}
         t0 = time.time()
-        log.write(f"machine {iid} on offer {o['id']} ({o['gpu_name']}, ${o['dph_total']:.2f}/h, {o.get('geolocation')})\n"); log.flush()
-        state, last = "starting", time.time()
+        iid = None
+        state, since, reached_running = "starting", time.time(), False
         try:
+            try:
+                iid = vast.create(o["id"], label, onstart, env)
+            except Exception as e:  # noqa: BLE001  the machine may exist even though the call failed
+                say(f"create failed ({e}); cleaning up anything labelled {label}")
+                time.sleep(30)
+                vast.destroy_labelled(label=label)
+                continue
+            ACTIVE_LABELS.add(label)
+            say(f"machine {iid} on offer {o['id']} ({o['gpu_name']}, ${o['dph_total']:.2f}/h, {o.get('geolocation')}), attempt {token}")
             while time.time() < deadline:
                 time.sleep(60)
                 try:
                     box = json.loads(r2.get_bytes(f"runs/{name}/box.json"))
                 except Exception:  # noqa: BLE001
                     box = {}
-                if box.get("t", 0) >= t0 - 5 and box.get("state") != state:
-                    state = box.get("state"); last = time.time()
-                    log.write(f"{int((time.time()-t0)/60)} min: {state} {box.get('detail','')}\n"); log.flush()
-                    r2.put_json(f"runs/{name}/status.json", {"name": name, "type": "train", "state": "running", "box": state,
-                                                             "machine": iid, "dph": o["dph_total"], "minutes": round((time.time()-t0)/60, 1)})
+                if not reached_running:
+                    try:
+                        inst = vast.instance(iid) or {}
+                        reached_running = inst.get("actual_status") == "running"
+                    except Exception:  # noqa: BLE001
+                        pass
+                if box.get("attempt") == token and box.get("state") != state:
+                    state, since = box.get("state"), time.time()
+                    say(f"{int((time.time()-t0)/60)} min: {state} {box.get('detail','')}")
+                    try:
+                        r2.put_json(f"runs/{name}/status.json", {"name": name, "type": "train", "state": "running", "box": state,
+                                                                 "machine": iid, "dph": o["dph_total"], "minutes": round((time.time()-t0)/60, 1)})
+                    except Exception as e:  # noqa: BLE001
+                        say(f"status write failed: {e}")
                 if state in ("done", "failed", "refused"):
                     break
-                if state == "starting" and time.time() - t0 > 25 * 60:
-                    state = "no boot"; break
+                limit = STALL.get(state, 30)
+                if limit and time.time() - since > limit * 60:
+                    say(f"stalled in '{state}' for {limit} min"); state = f"stalled:{state}"; break
+            else:
+                state = f"deadline:{state}"
         finally:
-            vast.destroy(iid)
-            hours = (time.time() - t0) / 3600
-            spent += hours * o["dph_total"]
-            log.write(f"machine {iid} deleted after {hours*60:.0f} min, ~${hours*o['dph_total']:.2f}\n"); log.flush()
-        if state in ("refused", "no boot"):
+            if iid is not None:
+                ok = vast.destroy(iid)
+                if not ok:
+                    ok = vast.destroy_labelled(label=label) > 0
+                hours = (time.time() - t0) / 3600
+                spent += hours * o["dph_total"]
+                say(f"machine {iid} {'deleted' if ok else 'NOT CONFIRMED DELETED (reaper will retry)'} after {hours*60:.0f} min, ~${hours*o['dph_total']:.2f}")
+                if ok:
+                    ACTIVE_LABELS.discard(label)
+        # a machine that never ran is a host problem: try another. Anything else would fail again: stop.
+        if state in ("refused",) or (state == "stalled:starting" and not reached_running):
             continue
         result = state
         break
     if result != "done":
-        raise RuntimeError(f"training ended: {result}; spent ~${spent:.2f}")
+        raise RuntimeError(f"training ended: {result}; Vast spend ~${spent:.2f}")
     return {"state": result, "vast_spent_estimate": round(spent, 2), "val": val_ids}
 
 
@@ -406,5 +450,18 @@ def main(path):
         sys.exit(1)
 
 
+def _on_term(*_):
+    # GitHub cancels or times out a job with SIGINT/SIGTERM: delete our machines before dying
+    try:
+        import vast
+        for lb in list(ACTIVE_LABELS):
+            vast.destroy_labelled(label=lb)
+    finally:
+        sys.exit(143)
+
+
 if __name__ == "__main__":
+    import signal
+    signal.signal(signal.SIGTERM, _on_term)
+    signal.signal(signal.SIGINT, _on_term)
     main(sys.argv[1])

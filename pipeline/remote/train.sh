@@ -1,47 +1,51 @@
 #!/usr/bin/env bash
-# Runs ON the rented GPU. Trains the style LoRA with ai-toolkit and streams everything to R2.
-# Env: RUN (name), PAIRS (comma list of R2 prefixes holding *.render.png/*.target.png),
-#      STEPS, R2_ENDPOINT, R2_ACCESS_KEY_ID, R2_SECRET_ACCESS_KEY, AITK_COMMIT, ISO_COMMIT
+# Runs ON the rented GPU (image ostris/aitoolkit, ai-toolkit at /app/ai-toolkit).
+# Trains the style LoRA and streams everything to R2. Any exit before "done" reports "failed",
+# so the GitHub side deletes the machine at once instead of waiting for the deadline.
+# Env: RUN, ATTEMPT, PAIRS, R2_ENDPOINT, R2_ACCESS_KEY_ID, R2_SECRET_ACCESS_KEY
 set -uo pipefail
 cd /root
 exec > >(tee -a /root/run.log) 2>&1
-echo "start $(date -u +%FT%TZ)"
-pip install -q boto3 >/dev/null 2>&1
+echo "start $(date -u +%FT%TZ) attempt ${ATTEMPT}"
+AITK=/app/ai-toolkit
+pip install -q --break-system-packages boto3 >/dev/null 2>&1 || pip install -q boto3 >/dev/null 2>&1
 
-python3 - <<'PY'
-import boto3, json, os, time
-s3 = boto3.client("s3", endpoint_url=os.environ["R2_ENDPOINT"], aws_access_key_id=os.environ["R2_ACCESS_KEY_ID"],
-                  aws_secret_access_key=os.environ["R2_SECRET_ACCESS_KEY"], region_name="auto")
-s3.put_object(Bucket="iso-burlington", Key=f"runs/{os.environ['RUN']}/box.json",
-              Body=json.dumps({"state": "booted", "t": time.time()}).encode(), ContentType="application/json")
-PY
-
-status() {  # status <state> [detail]
+status() {  # status <state> [detail] -- retried; returns non-zero only if every try failed
   python3 - "$1" "${2:-}" <<'PY'
 import boto3, json, os, sys, time
 s3 = boto3.client("s3", endpoint_url=os.environ["R2_ENDPOINT"], aws_access_key_id=os.environ["R2_ACCESS_KEY_ID"],
                   aws_secret_access_key=os.environ["R2_SECRET_ACCESS_KEY"], region_name="auto")
-s3.put_object(Bucket="iso-burlington", Key=f"runs/{os.environ['RUN']}/box.json",
-              Body=json.dumps({"state": sys.argv[1], "detail": sys.argv[2], "t": time.time()}).encode(), ContentType="application/json")
+body = json.dumps({"state": sys.argv[1], "detail": sys.argv[2], "attempt": os.environ["ATTEMPT"], "t": time.time()}).encode()
+for i in range(8):
+    try:
+        s3.put_object(Bucket="iso-burlington", Key=f"runs/{os.environ['RUN']}/box.json", Body=body, ContentType="application/json")
+        sys.exit(0)
+    except Exception as e:
+        print("status put failed:", e); time.sleep(5 * (i + 1))
+sys.exit(1)
 PY
 }
+trap 'rc=$?; status failed "train.sh stopped early (rc=$rc), see run.log"; python3 /root/sync.py || true' EXIT
 
-# 1. refuse a slow or power-capped GPU
+status booted
+nvidia-smi --query-gpu=name,driver_version,power.limit,power.default_limit --format=csv,noheader || true
+
+# 1. refuse a slow or power-capped GPU ([N/A] readings are allowed through)
 read -r PL PD <<<"$(nvidia-smi --query-gpu=power.limit,power.default_limit --format=csv,noheader,nounits | head -1 | tr -d ' ' | tr ',' ' ')"
 echo "gpu power limit ${PL} W of default ${PD} W"
-if python3 -c "import sys; sys.exit(0 if float('$PL') >= 0.9*float('$PD') else 1)"; then :; else
-  status "refused" "GPU power capped at ${PL} W (default ${PD} W)"; exit 3; fi
+if python3 -c "import sys
+try: sys.exit(0 if float('$PL') >= 0.9*float('$PD') else 1)
+except ValueError: sys.exit(0)"; then :; else
+  trap - EXIT; status refused "GPU power capped at ${PL} W (default ${PD} W)"; exit 3; fi
 
-# 2. ai-toolkit at a pinned commit
-status "installing"
-git clone -q https://github.com/ostris/ai-toolkit /root/ai-toolkit && cd /root/ai-toolkit && git checkout -q "$AITK_COMMIT" && git submodule update -q --init --recursive
-pip install -q -r requirements.txt 2>&1 | tail -3
+cd "$AITK" && echo "ai-toolkit $(git rev-parse --short HEAD 2>/dev/null || echo unknown)"
+python3 -c "import torch; print('torch', torch.__version__, 'cuda', torch.version.cuda, torch.cuda.get_device_name(0))"
 export HF_HUB_ENABLE_HF_TRANSFER=1
 
-# 3. training data from R2
+# 2. training data from R2
 status "downloading data"
 python3 - <<'PY'
-import boto3, os
+import boto3, json, os
 from pathlib import Path
 s3 = boto3.client("s3", endpoint_url=os.environ["R2_ENDPOINT"], aws_access_key_id=os.environ["R2_ACCESS_KEY_ID"],
                   aws_secret_access_key=os.environ["R2_SECRET_ACCESS_KEY"], region_name="auto")
@@ -50,7 +54,7 @@ for p in (tgt, ctl, val): p.mkdir(parents=True, exist_ok=True)
 caption = open("/root/caption.txt").read().strip()
 n = 0
 for prefix in os.environ["PAIRS"].split(","):
-    man = __import__("json").loads(s3.get_object(Bucket="iso-burlington", Key=f"{prefix}/manifest.json")["Body"].read())
+    man = json.loads(s3.get_object(Bucket="iso-burlington", Key=f"{prefix}/manifest.json")["Body"].read())
     a = man["angle"]
     for it in man["items"]:
         if not it.get("ok"): continue
@@ -64,25 +68,23 @@ for prefix in os.environ["PAIRS"].split(","):
         (tgt / f"{i}.txt").write_text(caption)
         n += 1
 print("train pairs", n, "val", len(list(val.glob("*.target.png"))))
+assert n >= 50, "too few training pairs"
 PY
+[ $? -eq 0 ] || exit 4
 
-# 4. stream outputs to R2 every 2 minutes while training
-(
-  while true; do
-    sleep 120
-    python3 /root/sync.py >/dev/null 2>&1 || true
-  done
-) &
+# 3. stream outputs to R2 every 2 minutes while training
+( while true; do sleep 120; python3 /root/sync.py >/dev/null 2>&1 || true; done ) &
 SYNC=$!
 
-# 5. train
-status "training"
-cd /root/ai-toolkit
+# 4. train
+status training
+cd "$AITK"
 python3 run.py /root/train.yaml
 RC=$?
 kill $SYNC 2>/dev/null
-python3 /root/sync.py || true
-if [ $RC -eq 0 ]; then status "done"; else status "failed" "ai-toolkit exited $RC"; fi
+SYNC_OK=1
+for i in 1 2 3; do python3 /root/sync.py && { SYNC_OK=0; break; }; sleep 10; done
+trap - EXIT
+if [ $RC -eq 0 ] && [ $SYNC_OK -eq 0 ]; then status done; else status failed "ai-toolkit rc=$RC, final sync ok=$((1-SYNC_OK))"; fi
 echo "end $(date -u +%FT%TZ) rc=$RC"
-python3 /root/sync.py || true
 sleep infinity   # the GitHub job deletes this machine once it sees done/failed

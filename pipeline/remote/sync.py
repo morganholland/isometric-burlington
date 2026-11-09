@@ -1,5 +1,5 @@
 """Copy new/changed training outputs (checkpoints, samples, log) from the GPU box to R2."""
-import os, json
+import os, json, sys
 from pathlib import Path
 import boto3
 
@@ -8,8 +8,9 @@ s3 = boto3.client("s3", endpoint_url=os.environ["R2_ENDPOINT"], aws_access_key_i
 run = os.environ["RUN"]
 state_f = Path("/root/.synced.json")
 seen = json.loads(state_f.read_text()) if state_f.exists() else {}
-roots = [Path("/root/ai-toolkit/output")]
-for root in roots:
+root = Path(os.environ.get("AITK_OUTPUT", "/root/output"))
+failed = 0
+if root.exists():
     for p in root.rglob("*"):
         if not p.is_file() or p.suffix not in (".safetensors", ".jpg", ".png", ".yaml", ".txt", ".json", ".log"):
             continue
@@ -18,7 +19,14 @@ for root in roots:
         sig = f"{st.st_size}:{int(st.st_mtime)}"
         if seen.get(key) == sig:
             continue
-        s3.upload_file(str(p), "iso-burlington", key)
-        seen[key] = sig
-s3.upload_file("/root/run.log", "iso-burlington", f"runs/{run}/run.log")
+        try:
+            s3.upload_file(str(p), "iso-burlington", key)
+            seen[key] = sig
+        except Exception as e:  # noqa: BLE001
+            print("upload failed", key, e); failed += 1
+try:
+    s3.upload_file("/root/run.log", "iso-burlington", f"runs/{run}/run.log")
+except Exception as e:  # noqa: BLE001
+    print("log upload failed", e); failed += 1
 state_f.write_text(json.dumps(seen))
+sys.exit(1 if failed else 0)

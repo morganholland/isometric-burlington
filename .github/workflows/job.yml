@@ -28,13 +28,6 @@ jobs:
       max-parallel: 18
       matrix:
         file: ${{ fromJson(needs.plan.outputs.files) }}
-    env:
-      CESIUM_ION_TOKEN: ${{ secrets.CESIUM_ION_TOKEN }}
-      OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
-      VAST_API_KEY: ${{ secrets.VAST_API_KEY }}
-      R2_ENDPOINT: ${{ secrets.R2_ENDPOINT }}
-      R2_ACCESS_KEY_ID: ${{ secrets.R2_ACCESS_KEY_ID }}
-      R2_SECRET_ACCESS_KEY: ${{ secrets.R2_SECRET_ACCESS_KEY }}
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
@@ -44,4 +37,19 @@ jobs:
       - run: pip install shapely pyproj numpy pillow boto3 requests
       - run: npm ci && npm i --no-save playwright@1.63.0 && npx playwright install --with-deps chromium
       - run: npm run -s build:render
-      - run: python3 pipeline/job.py "${{ matrix.file }}"
+      - name: Run job
+        env:
+          CESIUM_ION_TOKEN: ${{ secrets.CESIUM_ION_TOKEN }}
+          OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
+          VAST_API_KEY: ${{ secrets.VAST_API_KEY }}
+          R2_ENDPOINT: ${{ secrets.R2_ENDPOINT }}
+          R2_ACCESS_KEY_ID: ${{ secrets.R2_ACCESS_KEY_ID }}
+          R2_SECRET_ACCESS_KEY: ${{ secrets.R2_SECRET_ACCESS_KEY }}
+        run: exec python3 pipeline/job.py "${{ matrix.file }}"
+      - name: Delete any GPU machine this job left behind
+        if: always()
+        env:
+          VAST_API_KEY: ${{ secrets.VAST_API_KEY }}
+        run: |
+          name=$(python3 -c "import json,sys;print(json.load(open(sys.argv[1]))['name'])" "${{ matrix.file }}")
+          python3 -c "import sys;sys.path.insert(0,'pipeline');import vast;print('deleted', vast.destroy_labelled(prefix='iso-'+sys.argv[1]+'-dl'))" "$name"
