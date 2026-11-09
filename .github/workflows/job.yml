@@ -15,7 +15,7 @@ jobs:
         with: { fetch-depth: 2 }
       - id: f
         run: |
-          files=$(git diff --name-only --diff-filter=AM HEAD~1 HEAD -- 'jobs/*.json' | jq -R . | jq -sc .)
+          files=$(git diff --name-only --diff-filter=AMR HEAD~1 HEAD -- 'jobs/*.json' | jq -R . | jq -sc .)
           echo "files=$files" >> "$GITHUB_OUTPUT"
           echo "$files"
   run:
