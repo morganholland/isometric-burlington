@@ -1,15 +1,33 @@
-# Runs a pipeline job when a file under jobs/ is pushed. Results and a status.json go to
-# the R2 bucket under runs/<job name>/ so they can be checked from anywhere.
+# Runs pipeline jobs when files under jobs/ are pushed: one runner per changed job file.
+# Results and a status.json go to the R2 bucket under runs/<job name>/.
 name: job
 on:
   push:
     branches: [main]
     paths: ['jobs/*.json']
-concurrency: { group: job, cancel-in-progress: false }
 jobs:
-  run:
+  plan:
     runs-on: ubuntu-latest
-    timeout-minutes: 350
+    outputs:
+      files: ${{ steps.f.outputs.files }}
+    steps:
+      - uses: actions/checkout@v4
+        with: { fetch-depth: 2 }
+      - id: f
+        run: |
+          files=$(git diff --name-only --diff-filter=AM HEAD~1 HEAD -- 'jobs/*.json' | jq -R . | jq -sc .)
+          echo "files=$files" >> "$GITHUB_OUTPUT"
+          echo "$files"
+  run:
+    needs: plan
+    if: needs.plan.outputs.files != '[]'
+    runs-on: ubuntu-latest
+    timeout-minutes: 355
+    strategy:
+      fail-fast: false
+      max-parallel: 8
+      matrix:
+        file: ${{ fromJson(needs.plan.outputs.files) }}
     env:
       CESIUM_ION_TOKEN: ${{ secrets.CESIUM_ION_TOKEN }}
       OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
@@ -19,7 +37,6 @@ jobs:
       R2_SECRET_ACCESS_KEY: ${{ secrets.R2_SECRET_ACCESS_KEY }}
     steps:
       - uses: actions/checkout@v4
-        with: { fetch-depth: 2 }
       - uses: actions/setup-node@v4
         with: { node-version: 22 }
       - uses: actions/setup-python@v5
@@ -27,8 +44,4 @@ jobs:
       - run: pip install shapely pyproj numpy pillow boto3 requests
       - run: npm ci && npm i --no-save playwright@1.63.0 && npx playwright install --with-deps chromium
       - run: npm run -s build:render
-      - name: Run changed job files
-        run: |
-          for f in $(git diff --name-only HEAD~1 HEAD -- 'jobs/*.json'); do
-            [ -f "$f" ] && python3 pipeline/job.py "$f"
-          done
+      - run: python3 pipeline/job.py "${{ matrix.file }}"

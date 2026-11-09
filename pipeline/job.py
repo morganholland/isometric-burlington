@@ -139,6 +139,84 @@ def run_probe(job, out, log):
     return res
 
 
+def run_teacher_set(job, out, log):
+    """Render sampled frames for one angle and redraw each with the chosen teacher, up to
+    `tries` attempts, until a drawing passes every check. Passing pairs go to R2 train/<set>/."""
+    from concurrent.futures import ThreadPoolExecutor
+    from PIL import Image
+    import io, threading
+    import numpy as np
+    import sample, teacher
+    a, size = job["angle"], 1024
+    fr = sample.frames(a, job["frames"], seed=job.get("seed", 1))
+    (out / "frames.json").write_text(json.dumps(fr))
+    p = subprocess.run(["node", "pipeline/render/render.mjs", "--angle", str(a), "--frames", str(out / "frames.json"),
+                        "--out", str(out / "renders"), "--size", str(size)], cwd=ROOT, capture_output=True, text=True, timeout=4 * 3600)
+    log.write(p.stdout + p.stderr); log.flush()
+    empties = empty_shares(out / "renders")
+    lock = threading.Lock()
+    calls = {"n": 0}
+    max_calls = job["max_calls"]
+    water_heavy = {"n": 0}
+    items = []
+    for i, (x, y) in enumerate(fr):
+        name = f"{x}_{y}"
+        if empties.get(name) is None or empties[name] > 0.02:
+            items.append({"id": name, "skip": "render incomplete or has holes"}); continue
+        # where is this frame on the ground? (centre pixel at lake level is close enough for the curvature term)
+        cx, cy = x + size / 2, y + size / 2
+        import math
+        el = math.radians(geo.ELEV_DEG); h = math.radians(geo.HEADINGS[a])
+        r_ = cx * geo.PIXEL_M; f_ = -cy * geo.PIXEL_M / math.sin(el)
+        e = r_ * math.cos(h) + f_ * math.sin(h); n = -r_ * math.sin(h) + f_ * math.cos(h)
+        level = teacher.lake_level(e, n)
+        hm = teacher.heights(str(out / "renders" / f"{name}.h.png"))
+        wm = teacher.water_mask(hm, level)
+        ws = float(wm.mean()) if wm is not None else 0.0
+        if ws > 0.85:
+            if water_heavy["n"] >= max(2, job["frames"] // 15):
+                items.append({"id": name, "skip": "open water (enough already)"}); continue
+            water_heavy["n"] += 1
+        items.append({"id": name, "level": level, "water": round(ws, 3), "split": "val" if i % 20 == 19 else "train"})
+    (out / "pairs").mkdir(exist_ok=True)
+
+    def one(it):
+        if "skip" in it:
+            return it
+        rgba = Image.open(out / "renders" / f"{it['id']}.png")
+        rgb = Image.new("RGB", rgba.size, (0, 0, 0)); rgb.paste(rgba, mask=rgba.getchannel("A"))
+        buf = io.BytesIO(); rgb.save(buf, "PNG")
+        hm = teacher.heights(str(out / "renders" / f"{it['id']}.h.png"))
+        it["attempts"] = []
+        for t in range(job.get("tries", 3)):
+            with lock:
+                if calls["n"] >= max_calls:
+                    it["skip"] = "call cap reached"; return it
+                calls["n"] += 1
+            try:
+                img, _ = teacher.call_openai(job["model"], buf.getvalue(), teacher.STYLES[job["look"]])
+            except Exception as e:  # noqa: BLE001
+                it["attempts"].append({"error": str(e)[:200]}); continue
+            chk = teacher.check(rgb, Image.open(io.BytesIO(img)), hm, it["level"])
+            it["attempts"].append(chk)
+            if chk["pass"]:
+                rgb.save(out / "pairs" / f"{it['id']}.render.png")
+                (out / "pairs" / f"{it['id']}.target.png").write_bytes(img)
+                it["ok"] = True
+                return it
+            (out / "pairs" / f"{it['id']}.reject{t}.png").write_bytes(img)
+        return it
+
+    with ThreadPoolExecutor(job.get("threads", 4)) as ex:
+        items = list(ex.map(one, items))
+    manifest = {"angle": a, "model": job["model"], "look": job["look"], "calls": calls["n"], "items": items}
+    (out / "manifest.json").write_text(json.dumps(manifest, indent=1))
+    ok = [i for i in items if i.get("ok")]
+    return {"frames": len(fr), "pairs": len(ok), "val": sum(1 for i in ok if i["split"] == "val"),
+            "calls": calls["n"], "calls_per_pair": round(calls["n"] / max(1, len(ok)), 2),
+            "skipped": {k: sum(1 for i in items if i.get("skip") == k) for k in {i.get("skip") for i in items if i.get("skip")}}}
+
+
 def main(path):
     job = json.loads(Path(path).read_text())
     name = job["name"]
@@ -149,7 +227,7 @@ def main(path):
     r2.put_json(f"runs/{name}/status.json", status)
     log = open(out / "log.txt", "w")
     try:
-        result = {"render": run_render, "probe": run_probe, "teacher_test": run_teacher_test}[job["type"]](job, out, log)
+        result = {"render": run_render, "probe": run_probe, "teacher_test": run_teacher_test, "teacher_set": run_teacher_set}[job["type"]](job, out, log)
         status.update(state="done", result=result)
     except Exception:
         status.update(state="failed", error=traceback.format_exc()[-3000:])

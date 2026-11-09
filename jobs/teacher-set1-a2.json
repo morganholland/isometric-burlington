@@ -1,0 +1,2 @@
+{"type": "teacher_set", "name": "teacher-set1-a2", "angle": 2, "frames": 105, "seed": 1,
+ "model": "gpt-image-2.6-flare", "look": "builder", "tries": 3, "max_calls": 118, "threads": 4}
