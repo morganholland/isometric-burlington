@@ -1,6 +1,6 @@
 {
   "redirects": [
-    { "source": "/:path*", "has": [{ "type": "host", "value": "isometric-burlington.vercel.app" }], "destination": "https://isoburlington.com/:path*", "permanent": true },
-    { "source": "/:path*", "has": [{ "type": "host", "value": "isometric-burlington-morgans-projects-68702133.vercel.app" }], "destination": "https://isoburlington.com/:path*", "permanent": true }
+    { "source": "/(.*)", "has": [{ "type": "host", "value": "isometric-burlington.vercel.app" }], "destination": "https://isoburlington.com/$1", "permanent": true },
+    { "source": "/(.*)", "has": [{ "type": "host", "value": "isometric-burlington-morgans-projects-68702133.vercel.app" }], "destination": "https://isoburlington.com/$1", "permanent": true }
   ]
 }
