@@ -122,7 +122,13 @@ def run_ls(job, out, log):
             break
         tok = r["NextContinuationToken"]
     (out / "keys.json").write_text(json.dumps(keys))
-    return {"prefix": job["prefix"], "count": len(keys)}
+    res = {"prefix": job["prefix"], "count": len(keys)}
+    try:
+        import vast
+        res["vast_credit"] = vast.credit()
+    except Exception as e:  # noqa: BLE001
+        res["vast_credit"] = f"unavailable: {e}"[:200]
+    return res
 
 
 def run_scan_renders(job, out, log):
