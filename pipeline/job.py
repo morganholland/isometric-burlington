@@ -151,7 +151,10 @@ def run_tiles(job, out, log):
     tiles.pyramid(adir, t0, job.get("min_zoom", -7), job.get("quality", 84))
     n = r2.put_dir(out / "tiles" / kind / f"a{a}", f"{pre}{kind}/a{a}", cache="public, max-age=31536000, immutable")
     shutil.rmtree(out / "tiles")
-    tiles.set_cors()
+    try:
+        tiles.set_cors()
+    except Exception as e:  # noqa: BLE001  (the R2 token may not manage the bucket; the site ships the manifest)
+        log.write(f"CORS not set: {e}\n")
     try:
         man = json.loads(r2.get_bytes(f"{pre}manifest.json"))
     except Exception:  # noqa: BLE001

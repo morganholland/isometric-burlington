@@ -168,7 +168,8 @@ addEventListener('keydown', e => {
 // ---------- boot ----------
 async function loadManifest() {
   if (!TILE_BASE) return null;
-  try { const r = await fetch(`${TILE_BASE}/manifest.json`, { cache: 'no-cache' }); return r.ok ? r.json() : null; } catch { return null; }
+  // the site ships a copy of the tile bucket's manifest (the bucket's public address sends no CORS headers)
+  try { const r = await fetch('manifest.json', { cache: 'no-cache' }); return r.ok ? r.json() : null; } catch { return null; }
 }
 
 (async function boot() {
