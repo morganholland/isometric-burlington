@@ -72,13 +72,34 @@ def test_boats_are_lake_but_a_breakwater_is_land():
     assert (w[28:33, 10:55] == 0).all() and w[2, 32] == 1
 
 
-def test_recolour_only_touches_water():
+def test_recolour_only_touches_water_and_keeps_boats():
     img = np.full((256, 256, 3), 200, np.uint8); img[:, 128:] = (51, 68, 93)
-    img[:, 200:] = (90, 100, 110)                      # haze over the far lake
+    img[:, 200:] = (90, 100, 110)                      # haze / an imagery seam over the far lake
+    img[100:104, 150:156] = 250                        # a boat
     m = np.zeros((256, 256), bool); m[:, 128:] = True
-    out = W.recolour(img, m, blur=8)
+    out = W.recolour(img, m)
     assert (out[:, :128] == 200).all()
-    assert tuple(out[5, 160]) == (5, 74, 125) and tuple(out[5, 240]) == (5, 74, 125)   # haze gone
+    to = tuple(W.WATER_TO.astype(np.uint8))
+    assert tuple(out[5, 160]) == to and tuple(out[5, 240]) == to and tuple(out[5, 199]) == to
+    assert tuple(out[101, 152]) == (250, 250, 250)
+
+
+def test_imagery_seam_in_the_lake_is_lake_but_low_waterfront_land_is_not():
+    n = 96
+    h = np.zeros((n * W.LAT, n * W.LAT))
+    h[:, 800:816] = np.linspace(0, -1.2, 16)[None]     # a seam: the surface steps down 1.2 m over a cell
+    h[:, 816:] = -1.2
+    lv = np.full((n, n), -0.3)
+    px, band = W.water_pixels(h, lv), W.lake_band(h, lv)
+    assert not px[:, 803].any()                        # by itself the flatness rule breaks the lake here
+    w, paint = W.plan(px, None, band)
+    assert (w.numpy() == 1).all() and paint[:, 50].all()
+    # a broad lot at lake level whose mesh is bumpy (not flat), beside the lake: stays land
+    rng = np.random.default_rng(0)
+    h2 = np.zeros_like(h); h2[:, :40 * W.LAT] = rng.normal(0, 0.2, (n * W.LAT, 40 * W.LAT)).clip(-1, 0.5)
+    px2, band2 = W.water_pixels(h2, lv), W.lake_band(h2, lv)
+    w2, _ = W.plan(px2, None, band2)
+    assert (w2.numpy()[:, :40 + W.SHORE_FREE] == 0).all()
 
 
 def test_tiled_encode_matches_whole_image_encode():
