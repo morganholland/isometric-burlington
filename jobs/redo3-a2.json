@@ -1,0 +1,1 @@
+{"type":"draw","name":"redo3-a2","draw_run":"map2","lora":"runs/train-lora3/out/train-lora3/train-lora3.safetensors","angles":[2],"blocks":"-16384_-12288,-8192_-12288,4096_-16384","redo":true,"limit":0,"max_hours":1.5,"max_machines":2}
