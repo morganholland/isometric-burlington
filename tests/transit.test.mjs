@@ -4,6 +4,7 @@ import assert from 'node:assert/strict';
 import { busesAt, prepare, burlingtonClock } from '../viewer/transit.js';
 import { llaToEnu } from '../viewer/geo.js';
 import fs from 'node:fs';
+import { extrapolate } from '../viewer/planes.js';
 
 const lat = 44.4759, lon0 = -73.22, lon1 = lon0 + 1000 / (111320 * Math.cos(lat * Math.PI / 180));
 const mk = () => prepare({
@@ -55,4 +56,15 @@ test('the real timetable puts buses on the map on a weekday morning', () => {
   const b = busesAt(data, { ymd: '20261110', wd: 1, s: 8 * 3600 });
   assert.ok(b.length >= 8 && b.length < 120, `${b.length} buses`);
   for (const x of b) assert.ok(Math.hypot(x.e, x.n) < 40000 && x.u > -20 && x.u < 200, JSON.stringify(x));
+});
+
+test('a plane moves on by its speed, track and climb between reports', () => {
+  const a = { lat: 44.47, lon: -73.21, altFt: 3000, gs: 100, track: 90, vr: 600, ground: false };
+  const p = extrapolate(a, 10);
+  const east = (p.lon - a.lon) * 111320 * Math.cos(44.47 * Math.PI / 180);
+  assert.ok(Math.abs(east - 514.4) < 2, `${east} m east`);
+  assert.ok(Math.abs(p.lat - a.lat) < 1e-6);
+  assert.equal(Math.round(p.altFt), 3100);
+  assert.deepEqual(extrapolate({ ...a, ground: true, gs: 1 }, 10).lat, a.lat, 'parked planes stay put');
+  assert.ok(extrapolate(a, 600).lon - a.lon < 0.05, 'never guesses more than a minute ahead');
 });

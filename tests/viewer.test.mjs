@@ -25,6 +25,10 @@ async function open(ctxOpts) {
   // manifest (absent until a view is tiled) may fail
   page.on('console', m => { if (m.type() === 'error' && !/api\.weather\.gov|nominatim|manifest|Failed to load resource/.test(m.text())) errors.push(m.text()); });
   page.on('response', r => { if (r.status() >= 400 && !/api\.weather\.gov|nominatim|manifest\.json|\.webp$/.test(r.url())) errors.push(`${r.status()} ${r.url()}`); });
+  // live flights come from a serverless function the static test server does not have: answer for it
+  await page.route('**/api/flights', r => r.fulfill({ json: { now: Date.now(), ac: [
+    { id: 'a1b2c3', flight: 'JBU1234', type: 'A320', lat: 44.4759, lon: -73.2121, altFt: 3000, ground: false, gs: 160, track: 15, vr: -700, age: 1 },
+  ] } }));
   await page.goto(URL0);
   await page.waitForFunction(() => window.__iso);
   return { ctx, page, errors };
@@ -131,6 +135,29 @@ test('buses run on the timetable and say which route they are', async () => {
   await page.uncheck('#show-buses');
   await page.waitForTimeout(200);
   assert.equal(await page.evaluate(() => window.__iso.buses.drawn.length), 0);
+  assert.deepEqual(errors, []);
+  await ctx.close();
+});
+
+test('a live plane is drawn at its altitude and says what it is', async () => {
+  const { ctx, page, errors } = await open({ viewport: { width: 1400, height: 880 } });
+  await page.evaluate(() => window.__iso.goTo(44.4759, -73.2121, 'Downtown'));
+  await page.waitForTimeout(1600);
+  await page.evaluate(() => window.__iso.map.setZoom(-3, { animate: false }));
+  await page.waitForFunction(() => window.__iso.planes.drawn.length === 1, null, { timeout: 15000 });
+  const p = await page.evaluate(() => { const d = window.__iso.planes.drawn[0]; return [d.x, d.y]; });
+  // 3000 ft up, so drawn well above the downtown pin on screen
+  const pin = await page.evaluate(() => { const r = document.querySelector('.pin-dot').getBoundingClientRect(); return [r.x + r.width / 2, r.y + r.height / 2]; });
+  assert.ok(pin[1] - p[1] > 100, `plane ${p} vs pin ${pin}`);
+  if (SHOTS) await page.screenshot({ path: `${SHOTS}/desktop-plane.png` });
+  await page.mouse.move(p[0], p[1]);
+  await page.waitForSelector('#bus-tip:not([hidden])', { timeout: 3000 });
+  assert.equal(await page.textContent('#bus-tip b'), 'JBU1234');
+  assert.match(await page.textContent('#bus-tip .long'), /A320 · 2,9\d\d ft|A320 · 3,000 ft/);
+  await page.click('#layers-btn');
+  await page.uncheck('#show-planes');
+  await page.waitForTimeout(200);
+  assert.equal(await page.evaluate(() => window.__iso.planes.drawn.length), 0);
   assert.deepEqual(errors, []);
   await ctx.close();
 });

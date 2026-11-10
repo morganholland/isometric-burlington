@@ -15,6 +15,7 @@
 <div id="map" aria-label="Isometric map of Burlington, Vermont"></div>
 <div id="night" aria-hidden="true"></div>
 <canvas id="buses" aria-hidden="true"></canvas>
+<canvas id="planes" aria-hidden="true"></canvas>
 <div id="bus-tip" class="card" hidden><span class="sw"></span><div><b></b><div class="long"></div><div class="until"></div></div></div>
 <canvas id="fx" aria-hidden="true"></canvas>
 
@@ -61,10 +62,11 @@
   </fieldset>
   <fieldset><legend>On the map</legend>
     <label><input type="checkbox" id="show-buses" checked> GMT buses (timetable)</label>
+    <label><input type="checkbox" id="show-planes" checked> Planes (live)</label>
   </fieldset>
 </section>
 
-<footer class="status card"><span id="status">Burlington</span><span class="credit">Imagery Google · Cesium ion · Built with Qwen · © OpenStreetMap contributors · Weather NWS · Buses GMT timetable</span></footer>
+<footer class="status card"><span id="status">Burlington</span><span class="credit">Imagery Google · Cesium ion · Built with Qwen · © OpenStreetMap contributors · Weather NWS · Buses GMT timetable · Flights adsb.lol (ODbL)</span></footer>
 <script type="module" src="./app.js"></script>
 </body>
 </html>
