@@ -132,6 +132,7 @@ def run_tiles(job, out, log):
     from PIL import Image
     import tiles
     a, kind, run = job["angle"], job["kind"], job.get("run", "map")
+    pre = job.get("prefix", "")              # e.g. "preview/": a separate site root for trying things out
     grid = json.load(open(geo.DATA / "grid.json"))["angles"][a]
     adir = out / "tiles" / kind / f"a{a}"
     t0, missing = set(), []
@@ -148,15 +149,15 @@ def run_tiles(job, out, log):
         raise RuntimeError(f"{len(missing)} drawn blocks missing for a{a}, e.g. {missing[:5]}")
     log.write(f"a{a}: {len(t0)} native tiles, {len(missing)} blocks missing\n"); log.flush()
     tiles.pyramid(adir, t0, job.get("min_zoom", -7), job.get("quality", 84))
-    n = r2.put_dir(out / "tiles" / kind / f"a{a}", f"{kind}/a{a}", cache="public, max-age=31536000, immutable")
+    n = r2.put_dir(out / "tiles" / kind / f"a{a}", f"{pre}{kind}/a{a}", cache="public, max-age=31536000, immutable")
     shutil.rmtree(out / "tiles")
     tiles.set_cors()
     try:
-        man = json.loads(r2.get_bytes("manifest.json"))
+        man = json.loads(r2.get_bytes(f"{pre}manifest.json"))
     except Exception:  # noqa: BLE001
         man = {"minZoom": job.get("min_zoom", -7), "maxZoom": 0, "angles": [None] * 4}
     man["angles"][a] = kind
-    r2.put_bytes("manifest.json", json.dumps(man).encode(), "application/json", cache="no-cache")
+    r2.put_bytes(f"{pre}manifest.json", json.dumps(man).encode(), "application/json", cache="no-cache")
     return {"angle": a, "kind": kind, "files": n, "native_tiles": len(t0), "missing": len(missing), "manifest": man}
 
 
