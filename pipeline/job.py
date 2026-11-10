@@ -198,7 +198,7 @@ def run_scan_lake(job, out, log):
         lv = Wt.fit_level(h, Wt.lake_level_cells(a, bx, by, n, n))
         inl = Wt.inland_water(h, rgb)
         wl = Wt.water_like(rgb)
-        wpx = (Wt.water_pixels(h, lv) | inl) & wl
+        wpx = (Wt.water_pixels(h, lv) | inl | Wt.smooth_water(h, lv, rgb)) & wl
         low = (Wt.lake_band(h, lv) | inl | Wt.near_water_level(h, wpx)) & Wt.dark(rgb) & wl
         w = Wt.plan(wpx, np.isnan(h), low)[0].numpy()
         # what the planner pinned before it checked the render's colour: fields and meadows taken for ponds

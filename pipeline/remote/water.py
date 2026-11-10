@@ -160,6 +160,23 @@ def near_water_level(h, water_px, reach=8, above=0.15):
     return np.isfinite(h) & (top.max() > -1e8) & (h <= lim)
 
 
+SMOOTH_ABOVE = 3.5            # lake surface a tile shows this far above the fitted level, if it looks like water
+
+
+def smooth_water(h, level_cells, rgb):
+    """Lake that the tiles put above the fitted level (up to SMOOTH_ABOVE m): far out, and around islands,
+    some tiles carry the lake surface 1-3 m high, which left open water free and an invented town on it.
+    Such a cell is lake if it is flat, dark and smooth like water in the render; land this low by the
+    lake is never that dark and uniform (dark roofs stand higher)."""
+    H, W = h.shape[0] // LAT, h.shape[1] // LAT
+    c = rgb.astype(np.float32).reshape(H, LAT, W, LAT, 3)
+    lum = c @ np.array([0.3, 0.59, 0.11], np.float32)
+    ok = (lum.std(axis=(1, 3)) < 3) & (lum.mean(axis=(1, 3)) < 100)
+    lv = np.repeat(np.repeat(level_cells, LAT, 0), LAT, 1)
+    gy, gx = np.gradient(np.nan_to_num(h))
+    return np.repeat(np.repeat(ok, LAT, 0), LAT, 1) & (h < lv + SMOOTH_ABOVE) & (np.hypot(gx, gy) < 0.05)
+
+
 def water_like(rgb):
     """Pixels whose 16-px cell could be water by its look in the render. Water in the tiles is smooth
     (a cell's brightness varies by ~1, at most ~10 on choppy far lake), whatever its colour: navy, grey,

@@ -163,7 +163,7 @@ def water_pin(model, angle, bx, by, have, canvas):
     level = Wt.fit_level(h, level)
     inland = Wt.inland_water(h, np.asarray(canvas))
     wl = Wt.water_like(np.asarray(canvas))
-    wpx = (Wt.water_pixels(h, level) | inland) & wl
+    wpx = (Wt.water_pixels(h, level) | inland | Wt.smooth_water(h, level, np.asarray(canvas))) & wl
     # where a thin non-flat line may still be lake (imagery seams): low, and dark like water
     low = (Wt.lake_band(h, level) | inland | Wt.near_water_level(h, wpx)) & Wt.dark(np.asarray(canvas)) & wl
     weight, fill = Wt.plan(wpx, np.isnan(h), low)

@@ -225,3 +225,18 @@ def test_lake_water_stays_water_whatever_its_shade():
     for colour, sd in (((45, 56, 76), 2), ((69, 71, 76), 15), ((110, 100, 80), 4), ((60, 95, 62), 4), ((80, 100, 72), 3)):
         rgb = np.clip(np.array(colour, np.float32) + rng.normal(0, sd, shape), 0, 255).astype(np.uint8)
         assert W.water_like(rgb).mean() > 0.95, colour
+
+
+def test_lake_raised_by_a_tile_is_still_lake_when_it_looks_like_water():
+    rng = np.random.default_rng(2)
+    n = 96
+    h = np.full((n * W.LAT, n * W.LAT), -1.6)
+    h[:, : n * W.LAT // 2] = -0.2 + 1.3                      # left half: the tile carries the lake 1.3 m high
+    lv = np.full((n, n), -1.6)
+    water = np.clip(np.array((46, 57, 79), np.float32) + rng.normal(0, 1, h.shape + (1,)), 0, 255).astype(np.uint8)
+    wp = (W.water_pixels(h, lv) | W.smooth_water(h, lv, water)) & W.water_like(water)
+    w, _ = W.plan(wp, None, W.lake_band(h, lv) & W.dark(water))
+    assert (w.numpy() == 1).all()
+    # the same height, but textured like land, stays free
+    grass = np.clip(np.array((70, 105, 60), np.float32) + rng.normal(0, 12, h.shape + (1,)), 0, 255).astype(np.uint8)
+    assert not W.smooth_water(h, lv, grass).any()
