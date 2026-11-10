@@ -2,7 +2,7 @@
 
 {"type": "render", "name": "render-test-1", "angle": 0, "centers": [[44.4759, -73.2121]], "n": 2, "size": 1024}
 """
-import base64, json, os, random, subprocess, sys, time, traceback
+import base64, io, json, os, random, subprocess, sys, time, traceback
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).parent))
@@ -123,6 +123,41 @@ def run_ls(job, out, log):
         tok = r["NextContinuationToken"]
     (out / "keys.json").write_text(json.dumps(keys))
     return {"prefix": job["prefix"], "count": len(keys)}
+
+
+def run_tiles(job, out, log):
+    """Drawn blocks -> WebP tile pyramid on R2 under <kind>/a<angle>/, then mark the angle ready in manifest.json.
+    {"type":"tiles","name":"tiles-a0","run":"map","angle":0,"kind":"map-v1"}"""
+    import shutil
+    from PIL import Image
+    import tiles
+    a, kind, run = job["angle"], job["kind"], job.get("run", "map")
+    grid = json.load(open(geo.DATA / "grid.json"))["angles"][a]
+    adir = out / "tiles" / kind / f"a{a}"
+    t0, missing = set(), []
+    for bx, by in grid["blocks"]:
+        try:
+            d = Image.open(io.BytesIO(r2.get_bytes(f"drawn/{run}/a{a}/{bx}_{by}.png")))
+            r = Image.open(io.BytesIO(r2.get_bytes(f"renders/a{a}/{bx}_{by}.png")))
+        except Exception as e:  # noqa: BLE001
+            if "NoSuchKey" not in str(e) and "404" not in str(e):
+                raise
+            missing.append(f"{bx}_{by}"); continue
+        t0 |= tiles.cut_block(tiles.with_render_alpha(d, r), bx, by, adir, job.get("quality", 84))
+    if missing and not job.get("allow_missing"):
+        raise RuntimeError(f"{len(missing)} drawn blocks missing for a{a}, e.g. {missing[:5]}")
+    log.write(f"a{a}: {len(t0)} native tiles, {len(missing)} blocks missing\n"); log.flush()
+    tiles.pyramid(adir, t0, job.get("min_zoom", -7), job.get("quality", 84))
+    n = r2.put_dir(out / "tiles" / kind / f"a{a}", f"{kind}/a{a}", cache="public, max-age=31536000, immutable")
+    shutil.rmtree(out / "tiles")
+    tiles.set_cors()
+    try:
+        man = json.loads(r2.get_bytes("manifest.json"))
+    except Exception:  # noqa: BLE001
+        man = {"minZoom": job.get("min_zoom", -7), "maxZoom": 0, "angles": [None] * 4}
+    man["angles"][a] = kind
+    r2.put_bytes("manifest.json", json.dumps(man).encode(), "application/json", cache="no-cache")
+    return {"angle": a, "kind": kind, "files": n, "native_tiles": len(t0), "missing": len(missing), "manifest": man}
 
 
 def run_probe(job, out, log):
@@ -609,7 +644,7 @@ def main(path):
     r2.put_json(f"runs/{name}/status.json", status)
     log = open(out / "log.txt", "w")
     try:
-        result = {"render": run_render, "probe": run_probe, "teacher_test": run_teacher_test, "teacher_set": run_teacher_set, "train": run_train, "render_blocks": run_render_blocks, "ls": run_ls, "draw": run_draw}[job["type"]](job, out, log)
+        result = {"render": run_render, "probe": run_probe, "teacher_test": run_teacher_test, "teacher_set": run_teacher_set, "train": run_train, "render_blocks": run_render_blocks, "ls": run_ls, "draw": run_draw, "tiles": run_tiles}[job["type"]](job, out, log)
         status.update(state="done", result=result)
     except Exception:
         status.update(state="failed", error=traceback.format_exc()[-3000:])

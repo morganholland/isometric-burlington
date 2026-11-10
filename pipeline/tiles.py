@@ -18,25 +18,38 @@ T = 512
 Image.MAX_IMAGE_PIXELS = None
 
 
+def cut_block(im, bx, by, out_dir, quality):
+    """Cut one RGBA block at map pixel (bx, by) into level-0 tiles; returns the tiles written."""
+    tiles = set()
+    for j in range(im.height // T):
+        for i in range(im.width // T):
+            t = im.crop((i * T, j * T, (i + 1) * T, (j + 1) * T))
+            if t.getextrema()[3][1] == 0:   # fully transparent
+                continue
+            tx, ty = bx // T + i, by // T + j
+            p = out_dir / "0" / str(tx) / f"{ty}.webp"
+            p.parent.mkdir(parents=True, exist_ok=True)
+            save(t, p, quality)
+            tiles.add((tx, ty))
+    return tiles
+
+
 def cut_level0(blocks_dir, out_dir, quality):
     tiles = set()
     for f in sorted(Path(blocks_dir).glob("*.png")):
         if f.name.endswith(".h.png"):
             continue
         bx, by = map(int, f.stem.split("_"))
-        im = Image.open(f).convert("RGBA")
-        n = im.width // T
-        for j in range(im.height // T):
-            for i in range(n):
-                t = im.crop((i * T, j * T, (i + 1) * T, (j + 1) * T))
-                if t.getextrema()[3][1] == 0:   # fully transparent
-                    continue
-                tx, ty = bx // T + i, by // T + j
-                p = out_dir / "0" / str(tx) / f"{ty}.webp"
-                p.parent.mkdir(parents=True, exist_ok=True)
-                save(t, p, quality)
-                tiles.add((tx, ty))
+        tiles |= cut_block(Image.open(f).convert("RGBA"), bx, by, out_dir, quality)
     return tiles
+
+
+def with_render_alpha(drawn, render):
+    """The drawn block, clear wherever the render was clear (outside the map's region)."""
+    d = drawn.convert("RGB").resize(render.size, Image.LANCZOS) if drawn.size != render.size else drawn.convert("RGB")
+    out = d.convert("RGBA")
+    out.putalpha(render.getchannel("A") if render.mode == "RGBA" else Image.new("L", render.size, 255))
+    return out
 
 
 def save(im, path, quality):
