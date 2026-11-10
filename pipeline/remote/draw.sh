@@ -43,6 +43,7 @@ s3.download_file('iso-burlington', os.environ['LORA_KEY'], '/root/lora.safetenso
 cd /app/ai-toolkit
 ARGS=(--angles "$ANGLES" --lora /root/lora.safetensors --limit "${LIMIT:-0}")
 [ -n "${BLOCKS:-}" ] && ARGS+=("--blocks=$BLOCKS")   # = form: block ids can start with "-"
+[ "${REDO:-0}" = "1" ] && ARGS+=(--redo)
 python3 /root/iso/pipeline/remote/draw.py "${ARGS[@]}"
 RC=$?
 trap - EXIT

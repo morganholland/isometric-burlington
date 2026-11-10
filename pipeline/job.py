@@ -626,7 +626,7 @@ def run_draw(job, out, log):
     if not 16 <= job.get("stride", 48) <= 56:
         raise ValueError("stride must be 16..56 latent cells so windows overlap (window is 64)")
     env = {"LORA_KEY": job["lora"], "ANGLES": ",".join(str(a) for a in job["angles"]),
-           "BLOCKS": job.get("blocks", ""), "LIMIT": str(job.get("limit", 0)),
+           "BLOCKS": job.get("blocks", ""), "LIMIT": str(job.get("limit", 0)), "REDO": "1" if job.get("redo") else "0",
            "DRAW_RUN": job.get("draw_run", name), "STRIDE": str(job.get("stride", 48))}
     result, spent = rent_and_run(job, log, name, "draw.sh", env, DRAW_STALL, job.get("max_hours", 5))
     if result != "done":

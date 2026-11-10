@@ -156,3 +156,16 @@ def test_hole_in_the_far_lake_is_not_shore():
     px[40 * W.LAT:44 * W.LAT, 40 * W.LAT:44 * W.LAT] = False; miss[40 * W.LAT:44 * W.LAT, 40 * W.LAT:44 * W.LAT] = True
     w, fill = W.plan(px, miss)
     assert (w.numpy() == 1).all() and fill[40:44, 40:44].all()
+
+
+def test_inland_lake_is_found_but_a_bright_lot_or_a_small_pond_is_not():
+    n = 128
+    rng = np.random.default_rng(3)
+    h = 70 + rng.normal(0, 2, (n * W.LAT, n * W.LAT))            # rough land
+    rgb = np.full(h.shape + (3,), (90, 120, 70), np.uint8)
+    h[:, :70 * W.LAT] = 63.2; rgb[:, :70 * W.LAT] = (74, 96, 92)   # a big level dark lake
+    h[10 * W.LAT:20 * W.LAT, 90 * W.LAT:100 * W.LAT] = 63.0         # a small pond: too small
+    got = W.inland_water(h, rgb)
+    assert got[:, :70 * W.LAT].mean() > 0.95 and not got[:, 75 * W.LAT:].any()
+    rgb[:, :70 * W.LAT] = (150, 150, 150)                           # same surface, bright: a roof or lot
+    assert not W.inland_water(h, rgb).any()

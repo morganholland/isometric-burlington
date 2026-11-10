@@ -246,6 +246,7 @@ def main():
     ap.add_argument("--lora", required=True)
     ap.add_argument("--blocks", default="")
     ap.add_argument("--limit", type=int, default=0)
+    ap.add_argument("--redo", action="store_true", help="redraw the listed --blocks even if already drawn")
     a = ap.parse_args()
     run = os.environ.get("DRAW_RUN") or os.environ["RUN"]
     grids = json.load(open("/root/iso/data/grid.json"))["angles"]
@@ -262,7 +263,7 @@ def main():
         logkey = f"runs/{os.environ['RUN']}/draw-a{angle}.json"
         log = json.loads(r2_get(logkey) or b"[]")
         for i, (bx, by) in enumerate(order):
-            if r2_get(f"latents/{run}/a{angle}/{bx}_{by}.pt") is not None:
+            if not (a.redo and a.blocks) and r2_get(f"latents/{run}/a{angle}/{bx}_{by}.pt") is not None:
                 continue
             box("drawing", f"a{angle} block {i + 1}/{len(order)} ({bx},{by})")
             r = draw_block(model, run, angle, bx, by, have)
