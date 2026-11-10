@@ -207,7 +207,7 @@ $('#layers-btn').addEventListener('click', () => { const p = $('#layers'); p.hid
 document.querySelectorAll('input[name=time]').forEach(i => i.addEventListener('change', () => { state.timeMode = i.value; applySky(); }));
 document.querySelectorAll('input[name=wx]').forEach(i => i.addEventListener('change', () => { state.weatherMode = i.value; applySky(); }));
 // ---------- tip jar: shown only once a Venmo username is set ----------
-const VENMO = '';   // Venmo username without the @
+const VENMO = 'morgan-holland';   // Venmo username without the @
 if (VENMO) {
   const url = `https://venmo.com/${encodeURIComponent(VENMO)}?txn=pay&note=${encodeURIComponent('Isometric Burlington ☕')}`;
   $('#tip-link').href = url; $('#tip').hidden = false;

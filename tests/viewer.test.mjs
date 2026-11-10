@@ -181,9 +181,11 @@ test('first visit shows a hint once; ? explains how to use the map', async () =>
   assert.ok(await page.isHidden('#hint'), 'the hint shows only once');
   await page.click('#about-btn');
   await page.waitForSelector('#about:not([hidden])');
+  assert.ok(await page.isVisible('#tip-link'), 'the Venmo button shows in the guide');
   await page.keyboard.press('Escape');
   assert.ok(await page.isHidden('#about'));
   assert.match(await page.textContent('.status .credit-short'), /Google/);
+  assert.equal(await page.getAttribute('#tip-link', 'href'), 'https://venmo.com/morgan-holland?txn=pay&note=Isometric%20Burlington%20%E2%98%95');
   assert.deepEqual(errors, []);
   await ctx.close();
 });
