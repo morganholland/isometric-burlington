@@ -1,0 +1,1 @@
+{"type": "draw", "name": "tail1-a3", "draw_run": "map2", "lora": "runs/train-lora3/out/train-lora3/train-lora3.safetensors", "angles": [3], "blocks": "0_12288,4096_12288,8192_12288,12288_12288,16384_12288,20480_12288,24576_12288,0_16384,4096_16384,8192_16384,12288_16384,16384_16384,20480_16384,24576_16384", "limit": 0, "max_hours": 2.5, "max_machines": 2}
