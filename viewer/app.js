@@ -206,8 +206,29 @@ $('#zoom-out').addEventListener('click', () => map.zoomOut());
 $('#layers-btn').addEventListener('click', () => { const p = $('#layers'); p.hidden = !p.hidden; $('#layers-btn').setAttribute('aria-expanded', String(!p.hidden)); });
 document.querySelectorAll('input[name=time]').forEach(i => i.addEventListener('change', () => { state.timeMode = i.value; applySky(); }));
 document.querySelectorAll('input[name=wx]').forEach(i => i.addEventListener('change', () => { state.weatherMode = i.value; applySky(); }));
+// ---------- how to use: a one-time hint, and the ? panel ----------
+const store = { get: k => { try { return localStorage.getItem(k); } catch { return null; } }, set: (k, v) => { try { localStorage.setItem(k, v); } catch {} } };
+function showAbout(open) {
+  $('#about').hidden = !open;
+  $('#about-btn').setAttribute('aria-expanded', String(open));
+  if (open) { hideHint(); $('#about-close').focus(); }
+}
+function hideHint() { if (!$('#hint').hidden) { $('#hint').hidden = true; store.set('iso-hint-seen', '1'); } }
+if (!store.get('iso-hint-seen')) {
+  $('#hint').hidden = false;
+  // once someone has dragged or zoomed a few times, they've got it
+  let moves = 0;
+  map.on('dragend', () => { if (++moves >= 2) hideHint(); });
+}
+$('#hint-ok').addEventListener('click', hideHint);
+$('#hint-more').addEventListener('click', () => showAbout(true));
+$('#about-btn').addEventListener('click', () => showAbout($('#about').hidden));
+$('#about-close').addEventListener('click', () => { showAbout(false); $('#about-btn').focus(); });
+
 addEventListener('keydown', e => {
+  if (e.key === 'Escape' && !$('#about').hidden) { showAbout(false); $('#about-btn').focus(); return; }
   if (e.target.matches('input[type=search], input[type=text], textarea')) return;
+  if (e.key === '?') { showAbout($('#about').hidden); return; }
   if (e.key === 'r' || e.key === ']') rotate(1);
   if (e.key === 'R' || e.key === '[') rotate(-1);
   if (e.key === '/') { e.preventDefault(); $('#q').focus(); }
@@ -239,5 +260,5 @@ async function loadManifest() {
   refreshWeather();
   const st = sunTimes();
   $('#sun').textContent = `Sunset ${st.sunset.toLocaleTimeString('en-US', { timeZone: 'America/New_York', hour: 'numeric', minute: '2-digit' })}`;
-  window.__iso = { map, state, rotate, goTo, toPx, buses, planes };
+  window.__iso = { map, state, rotate, goTo, toPx, buses, planes, showAbout };
 })();

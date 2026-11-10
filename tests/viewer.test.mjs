@@ -161,3 +161,29 @@ test('a live plane is drawn at its altitude and says what it is', async () => {
   assert.deepEqual(errors, []);
   await ctx.close();
 });
+
+test('first visit shows a hint once; ? explains how to use the map', async () => {
+  const { ctx, page, errors } = await open({ viewport: { width: 390, height: 844 }, isMobile: true, hasTouch: true });
+  await page.waitForSelector('#hint:not([hidden])');
+  await page.click('#hint-more');
+  await page.waitForSelector('#about:not([hidden])');
+  assert.match(await page.textContent('#about'), /Turn the city/);
+  assert.match(await page.textContent('#about'), /Isometric Toronto/);
+  const box = await page.locator('#about').boundingBox();
+  assert.ok(box.x >= 0 && box.x + box.width <= 390 && box.y >= 0 && box.y + box.height <= 844, JSON.stringify(box));
+  assert.ok(await page.isHidden('#hint'), 'opening the guide dismisses the hint');
+  if (SHOTS) await page.screenshot({ path: `${SHOTS}/phone-about.png` });
+  await page.click('#about-close');
+  assert.ok(await page.isHidden('#about'));
+  await page.reload();
+  await page.waitForFunction(() => window.__iso && window.__iso.map._loaded);
+  await page.waitForTimeout(300);
+  assert.ok(await page.isHidden('#hint'), 'the hint shows only once');
+  await page.click('#about-btn');
+  await page.waitForSelector('#about:not([hidden])');
+  await page.keyboard.press('Escape');
+  assert.ok(await page.isHidden('#about'));
+  assert.match(await page.textContent('.status .credit-short'), /Google/);
+  assert.deepEqual(errors, []);
+  await ctx.close();
+});

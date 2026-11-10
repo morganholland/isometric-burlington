@@ -56,7 +56,30 @@
     <button id="zoom-out" type="button" aria-label="Zoom out">−</button>
   </div>
   <button id="layers-btn" class="card single" type="button" aria-expanded="false" aria-controls="layers" title="Time, weather and buses">◐</button>
+  <button id="about-btn" class="card single" type="button" aria-expanded="false" aria-controls="about" title="How to use this map">?</button>
 </div>
+
+<div id="hint" class="card hint" role="note" hidden>
+  <span class="hint-text"><b>Drag</b> to explore, <b>⟳</b> to turn the city, and <b>tap a bus or plane</b> to see what it is.</span>
+  <span class="hint-actions"><button id="hint-more" type="button">How to use</button><button id="hint-ok" type="button">Got it</button></span>
+</div>
+
+<section id="about" class="card about" role="dialog" aria-modal="false" aria-labelledby="about-title" hidden>
+  <button id="about-close" class="about-close" type="button" aria-label="Close">×</button>
+  <h2 id="about-title">How to use the map</h2>
+  <ul class="how">
+    <li><b>Move around:</b> drag the map. Scroll, pinch or use <b>+ −</b> to zoom.</li>
+    <li><b>Turn the city:</b> <b>⟲ ⟳</b> (or the <kbd>[</kbd> <kbd>]</kbd> keys) show it from all four sides.</li>
+    <li><b>Find a place:</b> search any street, address or landmark at the top.</li>
+    <li><b>Buses and planes:</b> hover or tap one to see its route or flight.</li>
+    <li><b>◐</b> switches time of day, weather, buses and planes.</li>
+  </ul>
+  <h3>What you're looking at</h3>
+  <p>Every block of Burlington, South Burlington and Winooski was redrawn in a city-builder style by an open-source AI image model, working from Google's 3D map of the city. It's an illustration: small details are invented, and some won't match what's really there.</p>
+  <p>The sky follows Burlington's real sunset and the current weather at BTV. Buses move along their routes on GMT's published timetable, not live GPS. Planes are live positions from ADS-B receivers.</p>
+  <h3>Credits</h3>
+  <p class="credits">Inspired by <a href="https://iso.sloptoronto.ca" target="_blank" rel="noopener">Isometric Toronto</a> by John Fewell. 3D map imagery © Google, via Cesium ion. Drawn with Qwen-Image. Search © OpenStreetMap contributors. Weather from the National Weather Service. Bus schedule from Green Mountain Transit. Flights from adsb.lol (ODbL). Made in South Burlington, Vermont.</p>
+</section>
 
 <section id="layers" class="card panel" hidden>
   <fieldset><legend>Time of day</legend>
@@ -77,7 +100,7 @@
   </fieldset>
 </section>
 
-<footer class="status card"><span id="status">Burlington</span><span class="credit">Imagery Google · Cesium ion · Built with Qwen · © OpenStreetMap contributors · Weather NWS · Buses GMT timetable · Flights adsb.lol (ODbL)</span></footer>
+<footer class="status card"><span id="status">Burlington</span><span class="credit-short">Imagery © Google</span><span class="credit">Imagery Google · Cesium ion · Built with Qwen · © OpenStreetMap contributors · Weather NWS · Buses GMT timetable · Flights adsb.lol (ODbL)</span></footer>
 <script type="module" src="./app.js"></script>
 </body>
 </html>
