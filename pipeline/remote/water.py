@@ -135,6 +135,10 @@ def plan(water_px, missing_px=None, band_px=None):
     near = F.max_pool2d(F.pad(full, (FILL_REACH,) * 4, value=0.0), 2 * FILL_REACH + 1, stride=1)[0, 0] > 0
     fill = miss & near
     w[fill] = 1.0
+    # paint a cell either side of a seam too: its ramp spills into the neighbouring (wet) cells
+    if seam.any():
+        sd = F.max_pool2d(torch.from_numpy(seam.astype(np.float32))[None, None], 3, stride=1, padding=1)[0, 0].numpy() > 0
+        seam = sd & ~dry
     return w, fill.numpy() | seam
 
 
