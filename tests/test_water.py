@@ -189,3 +189,16 @@ def test_ramp_between_two_lake_levels_is_lake_but_a_bright_breakwater_is_not():
     low2 = (W.lake_band(h2, lv2) | W.near_water_level(h2, wp2)) & W.dark(rgb2)
     w2, _ = W.plan(wp2, None, low2)
     assert (w2.numpy()[:, 31] == 0).all()
+
+
+def test_far_lake_sagging_well_below_the_level_is_still_lake():
+    """Far out the mesh's lake sags 2-4 m below the fitted level and tilts within one canvas."""
+    n = 96
+    yy = np.arange(n * W.LAT)[:, None] * np.ones((1, n * W.LAT))
+    h = -2.8 - 1.1 * yy / yy.max()                    # -2.8 m at the top, -3.9 m at the bottom
+    rgb = np.full(h.shape + (3,), (5, 74, 125), np.uint8)
+    lv = np.full((n, n), -1.6)
+    wp = W.water_pixels(h, lv) | W.inland_water(h, rgb)
+    low = (W.lake_band(h, lv) | W.near_water_level(h, wp)) & W.dark(rgb)
+    w, _ = W.plan(wp, None, low)
+    assert (w.numpy() == 1).all()

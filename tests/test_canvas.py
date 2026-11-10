@@ -37,7 +37,7 @@ def test_fit_level_finds_a_lake_below_the_prediction_but_ignores_a_flat_lot_abov
     lv = np.full((n, n), -8.3)
     h = np.full((n * 16, n * 16), -9.8)                                           # lake 1.5 m low
     h[:, :300] = 20.0                                                             # land
-    assert not W.lake_band(h, lv)[:, 500].any()
+    assert W.lake_band(h, lv)[:, 500].all()                                        # below the level: lake
     fitted = W.fit_level(h, lv)
     assert W.lake_band(h, fitted)[:, 500].all()
     lot = np.full((n * 16, n * 16), 30.0); lot[:, 400:] = -8.3 + 3.0              # big flat lot 3 m above

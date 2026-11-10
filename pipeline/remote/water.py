@@ -76,9 +76,10 @@ def fit_level(h, level_cells):
 
 
 def lake_band(h, level_cells):
-    """Pixels within a metre or so of lake level."""
+    """Pixels at or below lake level (up to 0.8 m above it). Nothing on land sits below the lake, and
+    far out the tiles' lake surface sags several metres and is not one plane, so there is no floor."""
     lv = np.repeat(np.repeat(level_cells, LAT, 0), LAT, 1)
-    return (h > lv - 1.5) & (h < lv + 0.8)
+    return h < lv + 0.8
 
 
 def water_pixels(h, level_cells):
