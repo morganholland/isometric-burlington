@@ -14,6 +14,8 @@
 <body>
 <div id="map" aria-label="Isometric map of Burlington, Vermont"></div>
 <div id="night" aria-hidden="true"></div>
+<canvas id="buses" aria-hidden="true"></canvas>
+<div id="bus-tip" class="card" role="status" hidden><span class="sw"></span><div><b></b><div class="long"></div><div class="until"></div></div></div>
 <canvas id="fx" aria-hidden="true"></canvas>
 
 <header class="card brand">
@@ -41,7 +43,7 @@
     <button id="zoom-in" type="button" aria-label="Zoom in">+</button>
     <button id="zoom-out" type="button" aria-label="Zoom out">−</button>
   </div>
-  <button id="layers-btn" class="card single" type="button" aria-expanded="false" aria-controls="layers" title="Time and weather">◐</button>
+  <button id="layers-btn" class="card single" type="button" aria-expanded="false" aria-controls="layers" title="Time, weather and buses">◐</button>
 </div>
 
 <section id="layers" class="card panel" hidden>
@@ -57,9 +59,12 @@
     <label><input type="radio" name="wx" value="snow"> Snow</label>
     <label><input type="radio" name="wx" value="fog"> Fog</label>
   </fieldset>
+  <fieldset><legend>On the map</legend>
+    <label><input type="checkbox" id="show-buses" checked> GMT buses (timetable)</label>
+  </fieldset>
 </section>
 
-<footer class="status card"><span id="status">Burlington</span><span class="credit">Imagery Google · Cesium ion · Built with Qwen · © OpenStreetMap contributors · Weather NWS</span></footer>
+<footer class="status card"><span id="status">Burlington</span><span class="credit">Imagery Google · Cesium ion · Built with Qwen · © OpenStreetMap contributors · Weather NWS · Buses GMT timetable</span></footer>
 <script type="module" src="./app.js"></script>
 </body>
 </html>

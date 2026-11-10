@@ -21,7 +21,10 @@ async function open(ctxOpts) {
   const page = await ctx.newPage();
   const errors = [];
   page.on('pageerror', e => errors.push(e.message));
-  page.on('console', m => { if (m.type() === 'error' && !/api\.weather\.gov|nominatim|manifest/.test(m.text())) errors.push(m.text()); });
+  // a failed load is judged by its URL (the console message has none): only outside services and the
+  // manifest (absent until a view is tiled) may fail
+  page.on('console', m => { if (m.type() === 'error' && !/api\.weather\.gov|nominatim|manifest|Failed to load resource/.test(m.text())) errors.push(m.text()); });
+  page.on('response', r => { if (r.status() >= 400 && !/api\.weather\.gov|nominatim|manifest\.json|\.webp$/.test(r.url())) errors.push(`${r.status()} ${r.url()}`); });
   await page.goto(URL0);
   await page.waitForFunction(() => window.__iso);
   return { ctx, page, errors };
@@ -99,6 +102,33 @@ test('phone: nothing overflows and controls are reachable', async () => {
   await page.tap('#rot-left');
   assert.equal(await page.evaluate(() => window.__iso.state.angle), 3);
   if (SHOTS) await page.screenshot({ path: `${SHOTS}/phone.png` });
+  assert.deepEqual(errors, []);
+  await ctx.close();
+});
+
+test('buses run on the timetable and say which route they are', async () => {
+  const { ctx, page, errors } = await open({ viewport: { width: 1400, height: 880 } });
+  await page.waitForFunction(() => window.__iso.buses.data);
+  // 8:30 am on a Tuesday in Burlington, looking at downtown
+  await page.evaluate(() => {
+    const target = Date.parse('2026-11-10T13:30:00Z');
+    window.__iso.buses.offsetMs = target - Date.now();
+    window.__iso.goTo(44.4759, -73.2121, 'Downtown');
+  });
+  await page.waitForTimeout(1600);
+  await page.evaluate(() => window.__iso.map.setZoom(-3, { animate: false }));
+  await page.waitForFunction(() => window.__iso.buses.drawn.length > 0, null, { timeout: 5000 });
+  const n = await page.evaluate(() => window.__iso.buses.drawn.length);
+  assert.ok(n >= 2 && n < 80, `${n} buses on screen`);
+  if (SHOTS) await page.screenshot({ path: `${SHOTS}/desktop-buses.png` });
+  const p = await page.evaluate(() => { const d = window.__iso.buses.drawn[0]; return [d.x, d.y]; });
+  await page.mouse.move(p[0], p[1]);
+  await page.waitForSelector('#bus-tip:not([hidden])', { timeout: 3000 });
+  assert.match(await page.textContent('#bus-tip b'), /^Route \w+/);
+  await page.click('#layers-btn');
+  await page.uncheck('#show-buses');
+  await page.waitForTimeout(200);
+  assert.equal(await page.evaluate(() => window.__iso.buses.drawn.length), 0);
   assert.deepEqual(errors, []);
   await ctx.close();
 });

@@ -3,6 +3,7 @@ import grid from './grid-lite.json';
 import { latLonToPx, pxToEnu, enuToPx, enuToLla, GRID } from './geo.js';
 import { nightFactor, fetchWeather, sunTimes } from './sky.js';
 import { WeatherFX } from './fx.js';
+import { BusLayer } from './transit.js';
 
 const TILE_BASE = (window.ISO_CONFIG && window.ISO_CONFIG.tileBase) || '';
 const GROUND_U = 40;           // typical ground height (m) used when turning the map
@@ -132,11 +133,43 @@ function goTo(lat, lon, label) {
 
 // ---------- sky: night + weather ----------
 const fx = new WeatherFX($('#fx'));
+
+// ---------- buses (GMT timetable) ----------
+function inRegion(a, x, y) {
+  const g = grid.angles[a];
+  if (x < g.x0 || x > g.x1 || y < g.y0 || y > g.y1) return false;
+  const poly = g.region; let inside = false;
+  for (let i = 0, j = poly.length - 1; i < poly.length; j = i++) {
+    const [xi, yi] = poly[i], [xj, yj] = poly[j];
+    if ((yi > y) !== (yj > y) && x < (xj - xi) * (y - yi) / (yj - yi) + xi) inside = !inside;
+  }
+  return inside;
+}
+const buses = new BusLayer($('#buses'), map, toLL, () => state.angle, (x, y) => inRegion(state.angle, x, y));
+buses.load('transit.json').catch(() => { buses.data = null; });
+function busTip(e) {
+  const tip = $('#bus-tip');
+  const d = buses.on && buses.data && buses.hit(e.containerPoint.x, e.containerPoint.y);
+  if (!d) { tip.hidden = true; return false; }
+  const info = buses.describe(d);
+  tip.querySelector('.sw').style.background = info.color;
+  tip.querySelector('b').textContent = info.name;
+  tip.querySelector('.long').textContent = info.long;
+  tip.querySelector('.until').textContent = `On the timetable, in service until ${info.until}`;
+  tip.style.left = `${e.containerPoint.x}px`; tip.style.top = `${e.containerPoint.y}px`;
+  tip.hidden = false;
+  return true;
+}
+map.on('mousemove', busTip);
+map.on('click', busTip);
+map.on('movestart zoomstart', () => { $('#bus-tip').hidden = true; });
+$('#show-buses').addEventListener('change', e => { buses.on = e.target.checked; if (!buses.on) $('#bus-tip').hidden = true; });
 function applySky() {
   const live = nightFactor();
   const night = state.timeMode === 'day' ? 0 : state.timeMode === 'night' ? 1 : live;
   document.documentElement.style.setProperty('--night', night.toFixed(3));
   document.body.classList.toggle('is-night', night > 0.5);
+  buses.night = night;
   const w = state.weatherMode === 'live' ? (state.weather || { kind: 'clear' }) : { kind: state.weatherMode, heavy: false, windMph: 8, windFromDeg: 300 };
   fx.set(w.kind, w.heavy, w.windMph, w.windFromDeg, GRID.headings[state.angle]);
   const t = new Date().toLocaleTimeString('en-US', { timeZone: 'America/New_York', hour: 'numeric', minute: '2-digit' });
@@ -191,5 +224,5 @@ async function loadManifest() {
   refreshWeather();
   const st = sunTimes();
   $('#sun').textContent = `Sunset ${st.sunset.toLocaleTimeString('en-US', { timeZone: 'America/New_York', hour: 'numeric', minute: '2-digit' })}`;
-  window.__iso = { map, state, rotate, goTo, toPx };
+  window.__iso = { map, state, rotate, goTo, toPx, buses };
 })();

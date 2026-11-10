@@ -183,7 +183,7 @@ def water_pin(model, angle, bx, by, have, canvas):
     return clean.to(dev), weight.to(dev)
 
 
-def neighbour_latents(run, angle, bx, by, C, dev):
+def neighbour_latents(run, angle, bx, by, C, dev, skip=frozenset()):
     H = W = BLOCK // LAT + 2 * MARGIN
     m = MARGIN
     clean = torch.zeros(C, H, W, device=dev)
@@ -191,7 +191,9 @@ def neighbour_latents(run, angle, bx, by, C, dev):
     dirs = {"nw": (-1, -1), "n": (0, -1), "ne": (1, -1), "w": (-1, 0), "e": (1, 0), "sw": (-1, 1), "s": (0, 1), "se": (1, 1)}
     bl = BLOCK // LAT
     for d, (dx, dy) in dirs.items():
-        raw = r2_get(f"latents/{run}/a{angle}/{bx + dx * BLOCK}_{by + dy * BLOCK}.pt")
+        nb = (bx + dx * BLOCK, by + dy * BLOCK)
+        # a neighbour waiting to be redrawn is bad: draw against nothing there rather than pin to it
+        raw = None if nb in skip else r2_get(f"latents/{run}/a{angle}/{nb[0]}_{nb[1]}.pt")
         done[d] = raw is not None
         if raw is None:
             continue
@@ -205,7 +207,7 @@ def neighbour_latents(run, angle, bx, by, C, dev):
     return clean, done
 
 
-def draw_block(model, run, angle, bx, by, have):
+def draw_block(model, run, angle, bx, by, have, skip=frozenset()):
     t0 = time.time()
     if r2_get(f"renders/a{angle}/{bx}_{by}.png") is None:
         # never draw (and pin neighbours to) a block from black
@@ -214,7 +216,7 @@ def draw_block(model, run, angle, bx, by, have):
     C = model.model.config.in_channels
     H = W = BLOCK // LAT + 2 * MARGIN
     canvas = render_canvas(angle, bx, by, have)
-    clean, done = neighbour_latents(run, angle, bx, by, C, dev)
+    clean, done = neighbour_latents(run, angle, bx, by, C, dev, skip)
     pw = S.pin_map(H, W, MARGIN, done, strip=8, device=dev)
     wp = water_pin(model, angle, bx, by, have, canvas)
     water_share = 0.0
@@ -268,7 +270,9 @@ def main():
             if not (a.redo and a.blocks) and r2_get(f"latents/{run}/a{angle}/{bx}_{by}.pt") is not None:
                 continue
             box("drawing", f"a{angle} block {i + 1}/{len(order)} ({bx},{by})")
-            r = draw_block(model, run, angle, bx, by, have)
+            # redoing a list: blocks of the list not yet redrawn in this run are not pinned to
+            skip = frozenset(tuple(b) for b in order[i:]) if (a.redo and a.blocks) else frozenset()
+            r = draw_block(model, run, angle, bx, by, have, skip)
             log.append(r); n += 1
             print(json.dumps(r), flush=True)
             s3.put_object(Bucket=BUCKET, Key=logkey, Body=json.dumps(log).encode(), ContentType="application/json")
