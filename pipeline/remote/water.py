@@ -23,8 +23,9 @@ WATER_TO = np.array([5.0, 74.0, 125.0])
 BOAT = 40                     # water pixels this much brighter than their surroundings are kept (boats, wakes)
 CELL_WET = 0.5                # a latent cell counts as water when this share of its pixels is
 SPECK = 12                    # dry patches smaller than this many cells (boats, buoys, wave glints) are lake
-SHORE_FREE = 6                # cells next to land that the model always draws, free of any pin (96 px)
-RAMP = 4                      # cells beyond that over which the pin fades in
+SHORE_FREE = 3                # cells next to land that the model always draws, free of any pin (48 px)
+RAMP = 3                      # cells beyond that over which the pin fades in
+# (a wider free band let the model grow invented island towns around real islands and boats)
 SEAM_WIDTH = 2                # imagery seams at lake level up to ~4 cells wide are lake
 FILL_REACH = 16               # missing cells this close to pinned lake become plain lake (= canvas margin)
 
@@ -144,6 +145,23 @@ def inland_water(h, rgb):
             if lum[px].mean() < INLAND_LUM:
                 out |= px
     return out
+
+
+def near_water_level(h, water_px, reach=8, above=0.15):
+    """Pixels no higher than the water surface nearby (within `reach` cells), give or take `above` m:
+    the ramps between lake surfaces at different levels, never a breakwater or pier standing above."""
+    H, W = h.shape[0] // LAT, h.shape[1] // LAT
+    hw = np.where(water_px, np.nan_to_num(h, nan=-1e9), -1e9).reshape(H, LAT, W, LAT).max(axis=(1, 3))
+    t = torch.from_numpy(hw.astype(np.float32))[None, None]
+    k = 2 * reach + 1
+    top = F.max_pool2d(F.pad(t, (reach,) * 4, value=-1e9), k, stride=1)[0, 0].numpy()
+    lim = np.repeat(np.repeat(top, LAT, 0), LAT, 1) + above
+    return np.isfinite(h) & (top.max() > -1e8) & (h <= lim)
+
+
+def dark(rgb, lum=110):
+    """Pixels as dark as lake water in the render (rocks, docks and boats are brighter)."""
+    return rgb.astype(np.float32) @ np.array([0.3, 0.59, 0.11], np.float32) < lum
 
 
 def _thin(mask, r):

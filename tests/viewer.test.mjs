@@ -31,9 +31,18 @@ test('desktop: loads, turns, zooms, sets time and weather', async () => {
   const { ctx, page, errors } = await open({ viewport: { width: 1400, height: 880 } });
   assert.equal(await page.isVisible('#layers'), false, 'layers panel starts closed');
   if (SHOTS) await page.screenshot({ path: `${SHOTS}/desktop-start.png` });
-  // outline of the coming map is shown while no tiles exist
-  assert.equal(await page.isVisible('#drawing'), true);
-  assert.ok(await page.locator('path.leaflet-interactive, .leaflet-overlay-pane path').count() >= 1);
+  const man = fs.existsSync('site/manifest.json') ? JSON.parse(fs.readFileSync('site/manifest.json', 'utf8')) : null;
+  const ready = man && man.angles ? man.angles.map(Boolean) : [false, false, false, false];
+  // while nothing is drawn the "being drawn" note is up; it goes once any view has tiles
+  assert.equal(await page.isVisible('#drawing'), !ready.some(Boolean));
+  if (!ready[0]) assert.ok(await page.locator('path.leaflet-interactive, .leaflet-overlay-pane path').count() >= 1, 'outline of the coming map');
+  const firstReady = ready.indexOf(true);
+  if (firstReady >= 0) {
+    for (let i = 0; i < firstReady; i++) await page.click('#rot-right');
+    await page.waitForFunction(() => [...document.querySelectorAll('.iso-tiles img')].some(i => i.complete && i.naturalWidth === 512), null, { timeout: 20000 });
+    if (SHOTS) await page.screenshot({ path: `${SHOTS}/desktop-tiles.png` });
+    for (let i = firstReady; i < 4; i++) await page.click('#rot-right');
+  }
   // north arrow: angle 0 looks east, so north is to the left
   assert.match(await page.getAttribute('#compass', 'aria-label'), /left/);
   const c0 = await page.evaluate(() => window.__iso.toPx(window.__iso.map.getCenter()));

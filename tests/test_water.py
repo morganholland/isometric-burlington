@@ -169,3 +169,23 @@ def test_inland_lake_is_found_but_a_bright_lot_or_a_small_pond_is_not():
     assert got[:, :70 * W.LAT].mean() > 0.95 and not got[:, 75 * W.LAT:].any()
     rgb[:, :70 * W.LAT] = (150, 150, 150)                           # same surface, bright: a roof or lot
     assert not W.inland_water(h, rgb).any()
+
+
+def test_ramp_between_two_lake_levels_is_lake_but_a_bright_breakwater_is_not():
+    n = 96
+    h = np.full((n * W.LAT, n * W.LAT), -3.87)
+    h[:, 800:816] = np.linspace(-3.87, -2.15, 16)[None]; h[:, 816:] = -2.15    # the far lake steps 1.7 m
+    rgb = np.full(h.shape + (3,), (57, 73, 96), np.uint8)
+    lv = np.full((n, n), -3.5)
+    wp = W.water_pixels(h, lv) | W.inland_water(h, rgb)
+    low = (W.lake_band(h, lv) | W.near_water_level(h, wp)) & W.dark(rgb)
+    w, _ = W.plan(wp, None, low)
+    assert (w.numpy() == 1).all()
+    # a breakwater: one cell wide, a little above the lake, bright rock -> stays land, drawn by the model
+    h2 = np.full_like(h, -0.3); h2[:, 500:510] = 0.6
+    rgb2 = rgb.copy(); rgb2[:, 500:510] = (170, 165, 150)
+    lv2 = np.full((n, n), -0.3)
+    wp2 = W.water_pixels(h2, lv2)
+    low2 = (W.lake_band(h2, lv2) | W.near_water_level(h2, wp2)) & W.dark(rgb2)
+    w2, _ = W.plan(wp2, None, low2)
+    assert (w2.numpy()[:, 31] == 0).all()

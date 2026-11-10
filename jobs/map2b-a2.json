@@ -1,1 +1,0 @@
-{"type":"draw","name":"map2b-a2","draw_run":"map2","lora":"runs/train-lora3/out/train-lora3/train-lora3.safetensors","angles":[2],"blocks":"","limit":0,"max_hours":5.5,"max_machines":3}
