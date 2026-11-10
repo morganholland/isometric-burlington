@@ -210,7 +210,7 @@ def test_a_flat_field_or_meadow_is_not_taken_for_water():
     h = np.full((n * W.LAT, n * W.LAT), -1.6)            # flat, at lake level
     lv = np.full((n, n), -1.6)
     field = np.clip(rng.normal((120, 112, 72), 24, h.shape + (3,)), 0, 255).astype(np.uint8)   # textured, warm
-    meadow = np.clip(rng.normal((70, 105, 60), 6, h.shape + (3,)), 0, 255).astype(np.uint8)    # smooth, green
+    meadow = np.clip(np.array((97, 114, 75), np.float32) + rng.normal(0, 10, h.shape + (1,)), 0, 255).astype(np.uint8)  # wet meadow
     for rgb in (field, meadow):
         wp = (W.water_pixels(h, lv) | W.inland_water(h, rgb)) & W.water_like(rgb)
         low = (W.lake_band(h, lv) | W.near_water_level(h, wp)) & W.dark(rgb) & W.water_like(rgb)
@@ -220,6 +220,8 @@ def test_a_flat_field_or_meadow_is_not_taken_for_water():
 
 def test_lake_water_stays_water_whatever_its_shade():
     rng = np.random.default_rng(1)
-    for colour, sd in (((45, 56, 76), 4), ((69, 71, 76), 15), ((110, 100, 80), 5)):   # navy, choppy grey, sediment plume
-        rgb = np.clip(rng.normal(colour, sd, (64 * W.LAT, 64 * W.LAT, 3)), 0, 255).astype(np.uint8)
+    shape = (64 * W.LAT, 64 * W.LAT, 1)
+    # navy, choppy grey, sediment plume, green shallows; brightness varies in all channels together, as waves do
+    for colour, sd in (((45, 56, 76), 2), ((69, 71, 76), 15), ((110, 100, 80), 4), ((60, 95, 62), 4), ((80, 100, 72), 3)):
+        rgb = np.clip(np.array(colour, np.float32) + rng.normal(0, sd, shape), 0, 255).astype(np.uint8)
         assert W.water_like(rgb).mean() > 0.95, colour

@@ -25,17 +25,18 @@ export function busesAt(data, c) {
   const out = [];
   const days = [{ ymd: c.ymd, wd: c.wd, s: c.s }, { ymd: prevDay(c.ymd), wd: (c.wd + 6) % 7, s: c.s + DAY }];
   for (const d of days) {
-    const off = new Set(data.holidays?.[d.ymd] || []);
+    const ex = data.dates?.[d.ymd];
+    const off = new Set(ex?.off || []), on = new Set(ex?.on || []);
     for (const tr of data.trips) {
-      const [rid, mask, si, tl] = tr;
-      if (!(mask >> d.wd & 1) || off.has(mask)) continue;
+      const [, svc, si, tl] = tr;
+      if (!((data.services[svc] >> d.wd & 1) || on.has(svc)) || off.has(svc)) continue;
       if (d.s < tl[0] || d.s >= tl[tl.length - 2]) continue;
       let i = 0;
       while (i + 2 < tl.length - 2 && tl[i + 2] <= d.s) i += 2;
       const t0 = tl[i], t1 = tl[i + 2], d0 = tl[i + 1], d1 = tl[i + 3];
       const dist = t1 > t0 ? d0 + (d1 - d0) * (d.s - t0) / (t1 - t0) : d0;
       const p = pointAlong(data.shapes[si], dist);
-      if (p) out.push({ trip: tr, route: rid, ...p });
+      if (p) out.push({ trip: tr, route: tr[0], ...p });
     }
   }
   return out;
@@ -61,8 +62,12 @@ export function prepare(data) {
 export class BusLayer {
   constructor(canvas, map, toLL, getAngle, inRegion) {
     Object.assign(this, { c: canvas, ctx: canvas.getContext('2d'), map, toLL, getAngle, inRegion });
-    this.data = null; this.on = true; this.night = 0; this.offsetMs = 0; this.drawn = []; this.lastPaint = 0;
+    this.data = null; this.on = true; this.night = 0; this.offsetMs = 0;
+    this.buses = []; this.drawn = []; this.lastLookup = -1e9; this.zooming = false;
     this.resize(); addEventListener('resize', () => this.resize());
+    // Leaflet keeps the old zoom and origin until a zoom animation ends: hide buses meanwhile
+    map.on('zoomstart', () => { this.zooming = true; });
+    map.on('zoomend', () => { this.zooming = false; });
     requestAnimationFrame(t => this.frame(t));
   }
   resize() {
@@ -78,34 +83,49 @@ export class BusLayer {
     const [x, y] = enuToPx(this.getAngle(), e, n, u);
     return this.map.latLngToContainerPoint(this.toLL(x, y));
   }
+  // the timetable is looked up ~15 times a second; buses are redrawn every frame so they stay on the
+  // streets while the map is dragged
   frame(t) {
     requestAnimationFrame(tt => this.frame(tt));
-    if (t - this.lastPaint < 66) return;              // ~15 fps is plenty for buses
-    this.lastPaint = t;
     const { ctx } = this;
     ctx.clearRect(0, 0, innerWidth, innerHeight);
     this.drawn = [];
-    if (!this.on || !this.data) return;
+    if (!this.on || !this.data || !this.map._loaded || this.zooming) return;
+    if (t - this.lastLookup > 66) {
+      this.lastLookup = t;
+      this.buses = busesAt(this.data, burlingtonClock(new Date(Date.now() + this.offsetMs)));
+    }
     const z = this.map.getZoom();
     const scale = 2 ** z / 0.23;                       // screen px per metre
     const grow = Math.max(1, 7 / (BOX.len * scale));   // keep a bus at least ~7 px long when zoomed out
     const angle = this.getAngle();
-    for (const b of busesAt(this.data, burlingtonClock(new Date(Date.now() + this.offsetMs)))) {
+    const todo = [];
+    for (const b of this.buses) {
       const [px, py] = enuToPx(angle, b.e, b.n, b.u);
       if (!this.inRegion(px, py)) continue;
-      const c = this.map.latLngToContainerPoint(this.toLL(px, py));
-      if (c.x < -40 || c.y < -40 || c.x > innerWidth + 40 || c.y > innerHeight + 40) continue;
-      this.drawBus(b, grow);
-      this.drawn.push({ x: c.x, y: c.y, b });
+      const g = this.geometry(b, grow);
+      if (g.box.x1 < 0 || g.box.y1 < 0 || g.box.x0 > innerWidth || g.box.y0 > innerHeight) continue;
+      todo.push({ b, g });
     }
+    todo.sort((p, q) => p.g.depth - q.g.depth);          // farther (higher on screen) first
+    for (const d of todo) {
+      this.drawBus(d.b, d.g);
+      this.drawn.push({ x: (d.g.box.x0 + d.g.box.x1) / 2, y: (d.g.box.y0 + d.g.box.y1) / 2, box: d.g.box, b: d.b });
+    }
+    if (this.onFrame) this.onFrame();
   }
-  drawBus(b, grow) {
-    const { ctx } = this;
+  geometry(b, grow) {
     const [fe, fn] = b.dir, se = fn, sn = -fe;          // forward and right (ENU)
     const L = BOX.len * grow / 2, W = BOX.wid * grow / 2, H = BOX.hgt * grow;
     const base = [[L, W], [L, -W], [-L, -W], [-L, W]].map(([f, s]) => [b.e + fe * f + se * s, b.n + fn * f + sn * s]);
     const bot = base.map(([e, n]) => this.screen(e, n, b.u));
     const top = base.map(([e, n]) => this.screen(e, n, b.u + H));
+    const xs = [...bot, ...top].map(p => p.x), ys = [...bot, ...top].map(p => p.y);
+    return { bot, top, depth: (bot[0].y + bot[2].y) / 2,
+      box: { x0: Math.min(...xs), x1: Math.max(...xs), y0: Math.min(...ys), y1: Math.max(...ys) }, grow };
+  }
+  drawBus(b, { bot, top, grow }) {
+    const { ctx } = this;
     const color = this.data.routes[b.route]?.[1] || '#c8472f';
     const shade = (hex, k) => {
       const v = parseInt(hex.slice(1), 16), f = x => Math.round(Math.min(255, x * k * (1 - this.night * 0.45)));
@@ -130,8 +150,9 @@ export class BusLayer {
     ctx.fillStyle = shade(color, 1.05);
     ctx.beginPath(); top.forEach((p, i) => i ? ctx.lineTo(p.x, p.y) : ctx.moveTo(p.x, p.y)); ctx.closePath(); ctx.fill();
     ctx.strokeStyle = 'rgba(255,255,255,0.35)'; ctx.lineWidth = 0.75; ctx.stroke();
-    if (this.night > 0.3) {
-      const nose = { x: (bot[0].x + bot[1].x) / 2, y: (bot[0].y + bot[1].y) / 2 };
+    const nose = { x: (bot[0].x + bot[1].x) / 2, y: (bot[0].y + bot[1].y) / 2 };
+    const tail = (bot[2].y + bot[3].y) / 2;
+    if (this.night > 0.3 && nose.y > tail) {             // headlights only when the nose faces the viewer
       const g = ctx.createRadialGradient(nose.x, nose.y, 0, nose.x, nose.y, 10 * Math.min(grow, 2));
       g.addColorStop(0, `rgba(255,236,170,${0.7 * this.night})`); g.addColorStop(1, 'rgba(255,236,170,0)');
       ctx.fillStyle = g; ctx.fillRect(nose.x - 24, nose.y - 24, 48, 48);
@@ -139,8 +160,13 @@ export class BusLayer {
   }
   // the bus under a screen point, if any
   hit(x, y) {
-    let best = null, bd = 16;
-    for (const d of this.drawn) { const dd = Math.hypot(d.x - x, d.y - y); if (dd < bd) { bd = dd; best = d; } }
+    let best = null, bd = Infinity;
+    for (const d of this.drawn) {
+      const { x0, x1, y0, y1 } = d.box, pad = 6;
+      if (x < x0 - pad || x > x1 + pad || y < y0 - pad || y > y1 + pad) continue;
+      const dd = Math.hypot(d.x - x, d.y - y);
+      if (dd < bd) { bd = dd; best = d; }
+    }
     return best;
   }
   describe(d) {

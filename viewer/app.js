@@ -147,22 +147,33 @@ function inRegion(a, x, y) {
 }
 const buses = new BusLayer($('#buses'), map, toLL, () => state.angle, (x, y) => inRegion(state.angle, x, y));
 buses.load('transit.json').catch(() => { buses.data = null; });
-function busTip(e) {
+let tipAt = null, tipBus = null;
+function showTip() {
   const tip = $('#bus-tip');
-  const d = buses.on && buses.data && buses.hit(e.containerPoint.x, e.containerPoint.y);
-  if (!d) { tip.hidden = true; return false; }
-  const info = buses.describe(d);
-  tip.querySelector('.sw').style.background = info.color;
-  tip.querySelector('b').textContent = info.name;
-  tip.querySelector('.long').textContent = info.long;
-  tip.querySelector('.until').textContent = `On the timetable, in service until ${info.until}`;
-  tip.style.left = `${e.containerPoint.x}px`; tip.style.top = `${e.containerPoint.y}px`;
+  const d = tipAt && buses.on && buses.data && buses.hit(tipAt.x, tipAt.y);
+  if (!d) { tip.hidden = true; tipBus = null; return false; }
+  if (d.b.trip !== tipBus) {                    // rewrite the text only when the bus changes
+    tipBus = d.b.trip;
+    const info = buses.describe(d);
+    tip.querySelector('.sw').style.background = info.color;
+    tip.querySelector('b').textContent = info.name;
+    tip.querySelector('.long').textContent = info.long;
+    tip.querySelector('.until').textContent = `On the timetable, in service until ${info.until}`;
+  }
   tip.hidden = false;
+  // beside the pointer, kept on screen
+  const w = tip.offsetWidth, h = tip.offsetHeight;
+  const x = tipAt.x + 14 + w > innerWidth - 8 ? tipAt.x - 14 - w : tipAt.x + 14;
+  const y = Math.min(Math.max(8, tipAt.y - h / 2), innerHeight - h - 8);
+  tip.style.left = `${Math.max(8, x)}px`; tip.style.top = `${y}px`;
   return true;
 }
+function busTip(e) { tipAt = e.containerPoint; showTip(); }
+buses.onFrame = () => { if (tipAt && !$('#bus-tip').hidden) showTip(); };
 map.on('mousemove', busTip);
 map.on('click', busTip);
-map.on('movestart zoomstart', () => { $('#bus-tip').hidden = true; });
+map.on('mouseout', () => { tipAt = null; $('#bus-tip').hidden = true; });
+map.on('movestart zoomstart', () => { tipAt = null; $('#bus-tip').hidden = true; });
 $('#show-buses').addEventListener('change', e => { buses.on = e.target.checked; if (!buses.on) $('#bus-tip').hidden = true; });
 function applySky() {
   const live = nightFactor();

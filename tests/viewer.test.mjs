@@ -121,7 +121,9 @@ test('buses run on the timetable and say which route they are', async () => {
   const n = await page.evaluate(() => window.__iso.buses.drawn.length);
   assert.ok(n >= 2 && n < 80, `${n} buses on screen`);
   if (SHOTS) await page.screenshot({ path: `${SHOTS}/desktop-buses.png` });
-  const p = await page.evaluate(() => { const d = window.__iso.buses.drawn[0]; return [d.x, d.y]; });
+  // a bus that is not under one of the floating cards
+  const p = await page.evaluate(() => { const d = window.__iso.buses.drawn.find(d => document.elementFromPoint(d.x, d.y)?.closest('#map')); return d && [d.x, d.y]; });
+  assert.ok(p, 'a bus in the open map');
   await page.mouse.move(p[0], p[1]);
   await page.waitForSelector('#bus-tip:not([hidden])', { timeout: 3000 });
   assert.match(await page.textContent('#bus-tip b'), /^Route \w+/);

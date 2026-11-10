@@ -6,9 +6,9 @@ usage: python3 pipeline/transit.py <unzipped GTFS dir> [out.json]
 Output (compact; times are seconds after the service day's midnight, may exceed 24 h):
   {"routes": {rid: [short_name, "#color", long_name]},
    "shapes": [[[lat, lon, h_ellipsoid_m, metres_along], ...]],   # simplified to ~3 m, h from a DEM
-   "trips": [[rid, day_mask, shape_index, [t, metres along shape, t, metres, ...]]],
-   "holidays": {"YYYYMMDD": [day_masks of the services that do not run that day]} }
-day_mask bit 0 = Monday ... bit 6 = Sunday. Calendar start/end dates are ignored on purpose, so the
+   "services": [day_mask, ...],                                # bit 0 = Monday ... bit 6 = Sunday
+   "trips": [[rid, service_index, shape_index, [t, metres along shape, t, metres, ...]]],
+   "dates": {"YYYYMMDD": {"off": [service_index, ...], "on": [service_index, ...]}} }   # exceptions Calendar start/end dates are ignored on purpose, so the
 fall timetable keeps playing after the feed expires (until this is re-run on a newer feed)."""
 import csv, json, math, sys, time, urllib.request
 from collections import defaultdict
@@ -82,10 +82,14 @@ def elevations(points):
 
 
 def build(d):
-    routes = {r["route_id"]: [r["route_short_name"], "#" + (r["route_color"] or "c8472f").lower(), r["route_long_name"]]
+    routes = {r["route_id"]: [r["route_short_name"], "#" + (r.get("route_color") or "c8472f").lower(), r["route_long_name"]]
               for r in rows(d, "routes.txt")}
     days = ["monday", "tuesday", "wednesday", "thursday", "friday", "saturday", "sunday"]
     mask = {c["service_id"]: sum(1 << i for i, k in enumerate(days) if c[k] == "1") for c in rows(d, "calendar.txt")}
+    exc = list(rows(d, "calendar_dates.txt")) if (Path(d) / "calendar_dates.txt").exists() else []
+    for c in exc:                                   # services defined only by their dates
+        mask.setdefault(c["service_id"], 0)
+    sidx = {sid: i for i, sid in enumerate(mask)}
     trips = {t["trip_id"]: t for t in rows(d, "trips.txt")}
     stops = {s["stop_id"]: (float(s["stop_lat"]), float(s["stop_lon"])) for s in rows(d, "stops.txt") if s["stop_lat"]}
     st = defaultdict(list)
@@ -111,7 +115,7 @@ def build(d):
             tl += [arr, round(dist, 1)]
             if dep != arr:
                 tl += [dep, round(dist, 1)]
-        out_trips.append([t["route_id"], mask[t["service_id"]], si, tl])
+        out_trips.append([t["route_id"], sidx[t["service_id"]], si, tl])
 
     shapes = [None] * len(used)
     allpts = []
@@ -128,13 +132,12 @@ def build(d):
     el = dict(zip(uniq, elevations(uniq)))
     out_shapes = [[[round(p[0], 5), round(p[1], 5), round(el[(round(p[0], 5), round(p[1], 5))] + GEOID_M, 1), round(p[2], 1)]
                    for p in pts] for pts in shapes]
-    holidays = defaultdict(set)
-    for c in rows(d, "calendar_dates.txt"):
-        if c["exception_type"] == "2" and c["service_id"] in mask:
-            holidays[c["date"]].add(mask[c["service_id"]])
+    dates = defaultdict(lambda: {"off": [], "on": []})
+    for c in exc:
+        dates[c["date"]]["off" if c["exception_type"] == "2" else "on"].append(sidx[c["service_id"]])
     used_routes = {t[0] for t in out_trips}
     return {"routes": {k: v for k, v in routes.items() if k in used_routes}, "shapes": out_shapes,
-            "trips": out_trips, "holidays": {k: sorted(v) for k, v in holidays.items()}}
+            "services": list(mask.values()), "trips": out_trips, "dates": dict(dates)}
 
 
 if __name__ == "__main__":

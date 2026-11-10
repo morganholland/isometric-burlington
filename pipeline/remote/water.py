@@ -161,20 +161,18 @@ def near_water_level(h, water_px, reach=8, above=0.15):
 
 
 def water_like(rgb):
-    """Pixels whose 16-px cell could be water by its colour in the render. Vetoes vegetation (much greener
-    than blue) and textured warm ground (fields, heath, mud flats): a flat field near lake level, or a
-    wide flat meadow anywhere, is otherwise taken for water and pinned as a pond. Lake water in the tiles
-    is grey-blue to navy and smooth; a sediment plume is brown but smooth, so it stays water."""
+    """Pixels whose 16-px cell could be water by its look in the render. Water in the tiles is smooth
+    (a cell's brightness varies by ~1, at most ~10 on choppy far lake), whatever its colour: navy, grey,
+    green shallows or a brown sediment plume. Fields, meadows and wetland scrub are textured (~9-25) and
+    green or warm, and a flat one near a water level was otherwise pinned as a pond. So only cells that
+    are both textured and not blue-grey are vetoed (beaches and docks too, which is harmless)."""
     H, W = rgb.shape[0] // LAT, rgb.shape[1] // LAT
     c = rgb.astype(np.float32).reshape(H, LAT, W, LAT, 3)
     m = c.mean(axis=(1, 3))
-    lum = c @ np.array([0.3, 0.59, 0.11], np.float32)
-    sd = lum.std(axis=(1, 3))
+    sd = (c @ np.array([0.3, 0.59, 0.11], np.float32)).std(axis=(1, 3))
     r, g, b = m[..., 0], m[..., 1], m[..., 2]
-    veg = g - b > 25
-    textured_warm = (sd > 14) & (r > b + 10)
-    ok = ~(veg | textured_warm)
-    return np.repeat(np.repeat(ok, LAT, 0), LAT, 1)
+    veto = (sd > 6) & ((g > b + 15) | (r > b + 10))
+    return np.repeat(np.repeat(~veto, LAT, 0), LAT, 1)
 
 
 def dark(rgb, lum=110):

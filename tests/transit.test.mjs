@@ -9,11 +9,13 @@ const lat = 44.4759, lon0 = -73.22, lon1 = lon0 + 1000 / (111320 * Math.cos(lat 
 const mk = () => prepare({
   routes: { r7: ['7', '#ff0000', 'North Avenue'] },
   shapes: [[[lat, lon0, 10, 0], [lat, lon1, 10, 1000]]],
+  services: [0b0000001, 0b0000001, 0],   // Mondays; Mondays (another service); only on listed dates
   trips: [
-    ['r7', 0b0000001, 0, [8 * 3600, 0, 8 * 3600 + 600, 1000]],          // Mondays 8:00-8:10
-    ['r7', 0b0000001, 0, [24 * 3600 + 600, 0, 24 * 3600 + 1200, 1000]],  // Monday's 00:10-00:20 (Tuesday early)
+    ['r7', 0, 0, [8 * 3600, 0, 8 * 3600 + 600, 1000]],          // Mondays 8:00-8:10
+    ['r7', 1, 0, [24 * 3600 + 600, 0, 24 * 3600 + 1200, 1000]],  // Monday's 00:10-00:20 (Tuesday early)
+    ['r7', 2, 0, [12 * 3600, 0, 12 * 3600 + 600, 1000]],         // noon, special dates only
   ],
-  holidays: { 20261130: [0b0000001] },
+  dates: { 20261130: { off: [0], on: [] }, 20261201: { off: [], on: [2] } },
 });
 
 test('a bus halfway through its trip is halfway along the route', () => {
@@ -31,8 +33,11 @@ test('no bus before or after the trip, or on another day', () => {
   assert.equal(busesAt(d, { ymd: '20261110', wd: 1, s: 8 * 3600 + 300 }).length, 0);
 });
 
-test('a holiday takes the service off', () => {
+test('a holiday takes only its own service off, and a special date adds one', () => {
   assert.equal(busesAt(mk(), { ymd: '20261130', wd: 0, s: 8 * 3600 + 300 }).length, 0);
+  assert.equal(busesAt(mk(), { ymd: '20261201', wd: 1, s: 900 }).length, 1, 'Monday-night trip of the other service still runs');
+  assert.equal(busesAt(mk(), { ymd: '20261201', wd: 1, s: 12 * 3600 + 300 }).length, 1);
+  assert.equal(busesAt(mk(), { ymd: '20261202', wd: 2, s: 12 * 3600 + 300 }).length, 0);
 });
 
 test("a trip after midnight belongs to the day before", () => {

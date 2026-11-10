@@ -238,6 +238,67 @@ def run_scan_lake(job, out, log):
             "ponds": [r["block"] for r in rows if r["ponds"] >= job.get("min_ponds", 60)]}
 
 
+def run_transit_heights(job, out, log):
+    """Bus route heights from the map's own height renders instead of a coarse surface DEM: for each
+    route point, project it with a guessed height, read the render's heights in a ~6 m window there, take
+    the low end (the road, not the trees over it or a building beside it), and repeat until it settles.
+    Writes transit.json (viewer/transit.json with heights replaced) to runs/<name>/.
+    {"type":"transit_heights","name":"transit-h1","angle":0}"""
+    import numpy as np
+    from PIL import Image
+    a = job.get("angle", 0)
+    data = json.loads((ROOT / "viewer/transit.json").read_text())
+    have = {tuple(b) for b in json.loads((ROOT / "data/grid.json").read_text())["angles"][a]["blocks"]}
+    B, R = geo.BLOCK, job.get("window", 13)
+    cache = {}
+
+    def heights(bx, by):
+        if (bx, by) not in cache:
+            if len(cache) > 6:
+                cache.pop(next(iter(cache)))
+            try:
+                im = np.asarray(Image.open(io.BytesIO(r2.get_bytes(f"renders/a{a}/{bx}_{by}.h.png"))).convert("RGBA"))
+                v = ((im[..., 0].astype(np.int64) << 16) | (im[..., 1].astype(np.int64) << 8) | im[..., 2]).astype(np.float32)
+                hm = (v - 20000) / 100.0
+                hm[im[..., 3] == 0] = np.nan
+                cache[(bx, by)] = hm
+            except Exception:  # noqa: BLE001
+                cache[(bx, by)] = None
+        return cache[(bx, by)]
+
+    pts = [p for sh in data["shapes"] for p in sh]
+    lat = np.array([p[0] for p in pts]); lon = np.array([p[1] for p in pts]); hd = np.array([p[2] for p in pts])
+    e, n, u_dem = geo.lla_to_enu(lat, lon, hd)
+    u = np.array(u_dem, float)
+    found = np.zeros(len(pts), bool)
+    for it in range(4):
+        x, y = geo.enu_to_px(a, e, n, u)
+        order = np.lexsort((np.floor(x / B), np.floor(y / B)))
+        for i in order:
+            bx, by = int(np.floor(x[i] / B) * B), int(np.floor(y[i] / B) * B)
+            if (bx, by) not in have:
+                continue
+            hm = heights(bx, by)
+            if hm is None:
+                continue
+            px, py = int(x[i]) - bx, int(y[i]) - by
+            win = hm[max(0, py - R):py + R + 1, max(0, px - R):px + R + 1]
+            win = win[np.isfinite(win)]
+            if win.size > 20:
+                u[i] = float(np.percentile(win, 10)); found[i] = True
+        log.write(f"iteration {it}: {int(found.sum())}/{len(pts)} points on the map\n"); log.flush()
+    k = 0
+    for sh in data["shapes"]:
+        for p in sh:
+            if found[k]:
+                p[2] = round(p[2] + (u[k] - u_dem[k]), 1)
+            k += 1
+    (out / "transit.json").write_text(json.dumps(data, separators=(",", ":")))
+    d = np.abs(u - u_dem)[found]
+    return {"points": len(pts), "on_map": int(found.sum()), "dem_diff_median_m": round(float(np.median(d)), 1) if d.size else None,
+            "dem_diff_p90_m": round(float(np.percentile(d, 90)), 1) if d.size else None}
+
+
 def run_tiles(job, out, log):
     """Drawn blocks -> WebP tile pyramid on R2 under <kind>/a<angle>/, then mark the angle ready in manifest.json.
     {"type":"tiles","name":"tiles-a0","run":"map","angle":0,"kind":"map-v1"}"""
@@ -764,7 +825,7 @@ def main(path):
     r2.put_json(f"runs/{name}/status.json", status)
     log = open(out / "log.txt", "w")
     try:
-        result = {"render": run_render, "probe": run_probe, "teacher_test": run_teacher_test, "teacher_set": run_teacher_set, "train": run_train, "render_blocks": run_render_blocks, "ls": run_ls, "draw": run_draw, "tiles": run_tiles, "scan_renders": run_scan_renders, "scan_lake": run_scan_lake}[job["type"]](job, out, log)
+        result = {"render": run_render, "probe": run_probe, "teacher_test": run_teacher_test, "teacher_set": run_teacher_set, "train": run_train, "render_blocks": run_render_blocks, "ls": run_ls, "draw": run_draw, "tiles": run_tiles, "scan_renders": run_scan_renders, "scan_lake": run_scan_lake, "transit_heights": run_transit_heights}[job["type"]](job, out, log)
         status.update(state="done", result=result)
     except Exception:
         status.update(state="failed", error=traceback.format_exc()[-3000:])
