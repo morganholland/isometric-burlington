@@ -41,14 +41,20 @@ def box(state, detail=""):
 
 
 def r2_get(key):
-    try:
-        return s3.get_object(Bucket=BUCKET, Key=key)["Body"].read()
-    except s3.exceptions.NoSuchKey:
-        return None
-    except Exception as e:  # noqa: BLE001
-        if "NoSuchKey" in str(e) or "404" in str(e):
+    """Bytes of an R2 object, None if it does not exist. A dropped connection mid-read (seen after hours
+    of drawing) is retried rather than ending the run."""
+    for attempt in range(6):
+        try:
+            return s3.get_object(Bucket=BUCKET, Key=key)["Body"].read()
+        except s3.exceptions.NoSuchKey:
             return None
-        raise
+        except Exception as e:  # noqa: BLE001
+            if "NoSuchKey" in str(e) or "404" in str(e):
+                return None
+            if attempt == 5:
+                raise
+            print(f"r2 read of {key} failed ({e}); retrying", flush=True)
+            time.sleep(2 + 4 * attempt)
 
 
 def load_model(lora_path):
