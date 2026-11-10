@@ -54,6 +54,24 @@ def lake_level_cells(angle, x0, y0, H, W):
     return LAKE_ENU_M - (e * e + n * n) / (2 * 6371000.0)
 
 
+def fit_level(h, level_cells):
+    """The predicted lake level, moved onto the lake actually in this canvas. Far from the origin the
+    tiles' lake sits up to ~1.5 m below the prediction (geoid). The shift is the commonest height
+    offset of flat pixels near the prediction, used only when there is plenty of such surface and
+    the shift is plausible for lake (so a flat lot above the lake can never become the level)."""
+    lv = np.repeat(np.repeat(level_cells, LAT, 0), LAT, 1)
+    r = h - lv
+    gy, gx = np.gradient(np.nan_to_num(h))
+    sel = np.isfinite(r) & (np.abs(r) < 4) & (np.hypot(gx, gy) < 0.05)
+    if sel.mean() < 0.05:
+        return level_cells
+    hist, edges = np.histogram(r[sel], bins=80, range=(-4, 4))
+    mode = float(edges[hist.argmax()] + 0.05)
+    if not (-2.5 <= mode <= 0.5) or hist.max() < 0.05 * r.size:
+        return level_cells
+    return level_cells + (mode + 0.35)        # centre the (-1.5, +0.8) band on the lake
+
+
 def lake_band(h, level_cells):
     """Pixels within a metre or so of lake level."""
     lv = np.repeat(np.repeat(level_cells, LAT, 0), LAT, 1)

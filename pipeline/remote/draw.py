@@ -16,6 +16,7 @@ sys.path.insert(0, os.environ.get("AITK", "/app/ai-toolkit"))
 sys.path.insert(0, str(Path(__file__).parent))
 import sampler as S  # noqa: E402
 import water as Wt  # noqa: E402
+import canvas as Cv  # noqa: E402
 
 BUCKET = "iso-burlington"
 CAPTION = open("/root/caption.txt").read().strip() if os.path.exists("/root/caption.txt") else ""
@@ -131,21 +132,26 @@ class WindowModel:
 
 
 def render_canvas(angle, bx, by, have, suffix=".png", mode="RGB"):
-    """Block render plus a MARGIN of neighbouring renders (black / clear where no neighbour block exists)."""
+    """Block render plus a MARGIN of neighbouring renders. Where the map ends (no neighbour block) the
+    block is mirrored into the margin; colour renders also get any clear pixels filled (canvas.py),
+    height renders keep them clear (= unknown)."""
     m = MARGIN * LAT
-    canvas = Image.new(mode, (BLOCK + 2 * m, BLOCK + 2 * m))
+    canvas = Image.new("RGBA", (BLOCK + 2 * m, BLOCK + 2 * m))
+    present = {}
     for dy in (-1, 0, 1):
         for dx in (-1, 0, 1):
             nb = (bx + dx * BLOCK, by + dy * BLOCK)
-            if nb not in have:
-                continue
-            raw = r2_get(f"renders/a{angle}/{nb[0]}_{nb[1]}{suffix}")
+            raw = r2_get(f"renders/a{angle}/{nb[0]}_{nb[1]}{suffix}") if nb in have else None
+            present[(dx, dy)] = raw is not None
             if raw is None:
                 continue
-            im = Image.open(io.BytesIO(raw)).convert(mode)
+            im = Image.open(io.BytesIO(raw)).convert("RGBA")
             # paste so that canvas (0,0) = (bx - m, by - m)
             canvas.paste(im, (nb[0] - bx + m, nb[1] - by + m))
-    return canvas
+    arr = Cv.mirror_missing(np.asarray(canvas), present, m, BLOCK)
+    if mode == "RGBA":
+        return Image.fromarray(arr, "RGBA")
+    return Image.fromarray(Cv.pushpull_fill(arr[..., :3], arr[..., 3]), "RGB")
 
 
 def water_pin(model, angle, bx, by, have, canvas):
@@ -154,6 +160,7 @@ def water_pin(model, angle, bx, by, have, canvas):
     hpng = np.asarray(render_canvas(angle, bx, by, have, ".h.png", "RGBA"))
     level = Wt.lake_level_cells(angle, bx - MARGIN * LAT, by - MARGIN * LAT, H, W)
     h = Wt.heights_from_png(hpng)
+    level = Wt.fit_level(h, level)
     wpx = Wt.water_pixels(h, level)
     weight, fill = Wt.plan(wpx, np.isnan(h), Wt.lake_band(h, level))
     if float(weight.max()) <= 0:
