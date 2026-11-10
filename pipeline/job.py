@@ -239,64 +239,72 @@ def run_scan_lake(job, out, log):
 
 
 def run_transit_heights(job, out, log):
-    """Bus route heights from the map's own height renders instead of a coarse surface DEM: for each
-    route point, project it with a guessed height, read the render's heights in a ~6 m window there, take
-    the low end (the road, not the trees over it or a building beside it), and repeat until it settles.
-    Writes transit.json (viewer/transit.json with heights replaced) to runs/<name>/.
-    {"type":"transit_heights","name":"transit-h1","angle":0}"""
+    """Bus route heights from the map's own height renders instead of a coarse surface DEM. For each
+    route point and each of the four views: project it with a guessed height, read the render's heights
+    in a ~3 m window there, take the low quarter, and repeat until it settles. A road hidden behind a
+    building or under trees in one view shows in another, so the lowest view wins; a 5-point running
+    median along the route then removes what is left. Writes transit.json to runs/<name>/.
+    {"type":"transit_heights","name":"transit-h2","angles":[0,1,2,3]}"""
     import numpy as np
     from PIL import Image
-    a = job.get("angle", 0)
     data = json.loads((ROOT / "viewer/transit.json").read_text())
-    have = {tuple(b) for b in json.loads((ROOT / "data/grid.json").read_text())["angles"][a]["blocks"]}
-    B, R = geo.BLOCK, job.get("window", 13)
-    cache = {}
-
-    def heights(bx, by):
-        if (bx, by) not in cache:
-            if len(cache) > 6:
-                cache.pop(next(iter(cache)))
-            try:
-                im = np.asarray(Image.open(io.BytesIO(r2.get_bytes(f"renders/a{a}/{bx}_{by}.h.png"))).convert("RGBA"))
-                v = ((im[..., 0].astype(np.int64) << 16) | (im[..., 1].astype(np.int64) << 8) | im[..., 2]).astype(np.float32)
-                hm = (v - 20000) / 100.0
-                hm[im[..., 3] == 0] = np.nan
-                cache[(bx, by)] = hm
-            except Exception:  # noqa: BLE001
-                cache[(bx, by)] = None
-        return cache[(bx, by)]
-
+    grid = json.loads((ROOT / "data/grid.json").read_text())["angles"]
+    B, R, Q = geo.BLOCK, job.get("window", 6), job.get("q", 25)
     pts = [p for sh in data["shapes"] for p in sh]
     lat = np.array([p[0] for p in pts]); lon = np.array([p[1] for p in pts]); hd = np.array([p[2] for p in pts])
     e, n, u_dem = geo.lla_to_enu(lat, lon, hd)
-    u = np.array(u_dem, float)
-    found = np.zeros(len(pts), bool)
-    for it in range(4):
-        x, y = geo.enu_to_px(a, e, n, u)
-        order = np.lexsort((np.floor(x / B), np.floor(y / B)))
-        for i in order:
-            bx, by = int(np.floor(x[i] / B) * B), int(np.floor(y[i] / B) * B)
-            if (bx, by) not in have:
-                continue
-            hm = heights(bx, by)
-            if hm is None:
-                continue
-            px, py = int(x[i]) - bx, int(y[i]) - by
-            win = hm[max(0, py - R):py + R + 1, max(0, px - R):px + R + 1]
-            win = win[np.isfinite(win)]
-            if win.size > 20:
-                u[i] = float(np.percentile(win, 10)); found[i] = True
-        log.write(f"iteration {it}: {int(found.sum())}/{len(pts)} points on the map\n"); log.flush()
-    k = 0
+    per = []
+    for a in job.get("angles", [0, 1, 2, 3]):
+        have = {tuple(b) for b in grid[a]["blocks"]}
+        cache = {}
+
+        def heights(bx, by):
+            if (bx, by) not in cache:
+                if len(cache) > 6:
+                    cache.pop(next(iter(cache)))
+                try:
+                    im = np.asarray(Image.open(io.BytesIO(r2.get_bytes(f"renders/a{a}/{bx}_{by}.h.png"))).convert("RGBA"))
+                    v = ((im[..., 0].astype(np.int64) << 16) | (im[..., 1].astype(np.int64) << 8) | im[..., 2]).astype(np.float32)
+                    hm = (v - 20000) / 100.0
+                    hm[im[..., 3] == 0] = np.nan
+                    cache[(bx, by)] = hm
+                except Exception:  # noqa: BLE001
+                    cache[(bx, by)] = None
+            return cache[(bx, by)]
+
+        u = np.array(u_dem, float)
+        found = np.zeros(len(pts), bool)
+        for it in range(4):
+            x, y = geo.enu_to_px(a, e, n, u)
+            for i in np.lexsort((np.floor(x / B), np.floor(y / B))):
+                bx, by = int(np.floor(x[i] / B) * B), int(np.floor(y[i] / B) * B)
+                hm = heights(bx, by) if (bx, by) in have else None
+                if hm is None:
+                    continue
+                px, py = int(x[i]) - bx, int(y[i]) - by
+                win = hm[max(0, py - R):py + R + 1, max(0, px - R):px + R + 1]
+                win = win[np.isfinite(win)]
+                if win.size > 20:
+                    u[i] = float(np.percentile(win, Q)); found[i] = True
+        per.append(np.where(found, u, np.nan))
+        log.write(f"a{a}: {int(found.sum())}/{len(pts)} points on the map\n"); log.flush()
+    allu = np.vstack(per)
+    ok = np.isfinite(allu).any(axis=0)
+    best = np.where(ok, np.nanmin(np.where(np.isfinite(allu), allu, np.inf), axis=0), u_dem)
+    k, steep = 0, 0
     for sh in data["shapes"]:
-        for p in sh:
-            if found[k]:
-                p[2] = round(p[2] + (u[k] - u_dem[k]), 1)
-            k += 1
+        idx = list(range(k, k + len(sh))); k += len(sh)
+        sm = [float(np.median([best[j] for j in idx[max(0, t - 2):t + 3]])) for t in range(len(idx))]
+        for t, p in enumerate(sh):
+            if ok[idx[t]]:
+                p[2] = round(p[2] + (sm[t] - u_dem[idx[t]]), 1)
+        for p0, p1 in zip(sh, sh[1:]):
+            dd = p1[3] - p0[3]
+            steep += dd > 0 and abs(p1[2] - p0[2]) > 3 and abs(p1[2] - p0[2]) / dd > 0.15
     (out / "transit.json").write_text(json.dumps(data, separators=(",", ":")))
-    d = np.abs(u - u_dem)[found]
-    return {"points": len(pts), "on_map": int(found.sum()), "dem_diff_median_m": round(float(np.median(d)), 1) if d.size else None,
-            "dem_diff_p90_m": round(float(np.percentile(d, 90)), 1) if d.size else None}
+    d = np.abs(best - u_dem)[ok]
+    return {"points": len(pts), "on_map": int(ok.sum()), "steep_segments": int(steep),
+            "dem_diff_median_m": round(float(np.median(d)), 1), "dem_diff_p90_m": round(float(np.percentile(d, 90)), 1)}
 
 
 def run_tiles(job, out, log):
