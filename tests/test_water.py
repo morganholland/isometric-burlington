@@ -106,3 +106,32 @@ def test_real_harbour_block_if_available():
     w = W.pin_weights(W.water_pixels(h, W.lake_level_cells(0, 0, 0, 256, 256))).numpy()
     assert w[200:, :].mean() > 0.95      # the open lake at the bottom, where the city was invented
     assert w[:60, :].max() == 0          # the town along the top
+
+
+def test_map_edge_in_the_lake_stays_pinned_and_its_margin_is_plain_lake():
+    n, m = 288, 16                                     # canvas cells, margin
+    px = np.ones((n * W.LAT, n * W.LAT), bool)
+    miss = np.zeros_like(px)
+    px[:, (n - m) * W.LAT:] = False; miss[:, (n - m) * W.LAT:] = True     # no block to the east
+    w, fill = W.plan(px, miss)
+    w = w.numpy()
+    assert (w[m:n - m, m:n - m] == 1).all()            # the whole block, right up to the missing edge
+    assert fill[:, n - m:].all() and (w[:, n - m:] == 1).all()
+    img = W.recolour(np.full((n * W.LAT, n * W.LAT, 3), 60, np.uint8), px, fill)
+    assert tuple(img[5, -1]) == tuple(W.WATER_TO.astype(np.uint8))
+
+
+def test_map_edge_on_land_is_left_alone():
+    n, m = 288, 16
+    px = np.zeros((n * W.LAT, n * W.LAT), bool)
+    miss = np.zeros_like(px); miss[:, (n - m) * W.LAT:] = True
+    w, fill = W.plan(px, miss)
+    assert w.max() == 0 and not fill.any()
+
+
+def test_hole_in_the_far_lake_is_not_shore():
+    n = 96
+    px = np.ones((n * W.LAT, n * W.LAT), bool); miss = np.zeros_like(px)
+    px[40 * W.LAT:44 * W.LAT, 40 * W.LAT:44 * W.LAT] = False; miss[40 * W.LAT:44 * W.LAT, 40 * W.LAT:44 * W.LAT] = True
+    w, fill = W.plan(px, miss)
+    assert (w.numpy() == 1).all() and fill[40:44, 40:44].all()

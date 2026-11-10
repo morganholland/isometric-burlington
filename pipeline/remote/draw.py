@@ -153,16 +153,22 @@ def water_pin(model, angle, bx, by, have, canvas):
     H = W = BLOCK // LAT + 2 * MARGIN
     hpng = np.asarray(render_canvas(angle, bx, by, have, ".h.png", "RGBA"))
     level = Wt.lake_level_cells(angle, bx - MARGIN * LAT, by - MARGIN * LAT, H, W)
-    wpx = Wt.water_pixels(Wt.heights_from_png(hpng), level)
-    weight = Wt.pin_weights(wpx)
+    h = Wt.heights_from_png(hpng)
+    wpx = Wt.water_pixels(h, level)
+    weight, fill = Wt.plan(wpx, np.isnan(h))
     if float(weight.max()) <= 0:
         return None
-    img = Wt.recolour(np.asarray(canvas), wpx)
+    img = Wt.recolour(np.asarray(canvas), wpx, fill)
     dev, dt = model.device_torch, model.torch_dtype
 
     def enc(t):
+        """encode_images with the posterior mode, not a sample: the same water encodes the same in every block."""
         with torch.no_grad():
-            return model.encode_images([t.to(dev) * 2 - 1], device=dev, dtype=dt)[0]
+            x = (t.to(dev, dt) * 2 - 1)[None]
+            x = torch.cat([x, torch.ones_like(x[:, :1])], dim=1).unsqueeze(2)     # opaque alpha, frame dim
+            lat = model.vae.encode(x).latent_dist.mode()
+            mean, std = model._latent_stats(lat.device, lat.dtype)
+            return ((lat - mean) / std).squeeze(2)[0]
     clean = Wt.encode_tiles(enc, img, weight)
     return clean.to(dev), weight.to(dev)
 
@@ -204,8 +210,8 @@ def draw_block(model, run, angle, bx, by, have):
     water_share = 0.0
     if wp is not None:
         wclean, ww = wp
-        take = ww > pw
-        clean = torch.where(take[None], wclean, clean)
+        # a finished neighbour stays the target wherever it is pinned (its latents already hold its own water)
+        clean = torch.where((pw > 0)[None], clean, wclean)
         pw = torch.maximum(pw, ww)
         water_share = round(float((ww[MARGIN:H - MARGIN, MARGIN:W - MARGIN] >= 0.999).float().mean()), 3)
     y0, x0 = by // LAT - MARGIN, bx // LAT - MARGIN

@@ -25,6 +25,7 @@ CELL_WET = 0.5                # a latent cell counts as water when this share of
 SPECK = 12                    # dry patches smaller than this many cells (boats, buoys, wave glints) are lake
 SHORE_FREE = 6                # cells next to land that the model always draws, free of any pin (96 px)
 RAMP = 4                      # cells beyond that over which the pin fades in
+FILL_REACH = 16               # missing cells this close to pinned lake become plain lake (= canvas margin)
 
 
 def heights_from_png(rgba):
@@ -73,8 +74,6 @@ def _drop_specks(dry, min_cells):
         while stack:
             y, x = stack.pop()
             comp.append((y, x))
-            if len(comp) >= min_cells and not stack:
-                break
             for dy in (-1, 0, 1):
                 for dx in (-1, 0, 1):
                     yy, xx = y + dy, x + dx
@@ -87,34 +86,55 @@ def _drop_specks(dry, min_cells):
     return out
 
 
-def pin_weights(water_px):
-    """Per-cell pin weight: 0 on land and for SHORE_FREE cells off any shore, then fading in to 1 over RAMP."""
+def plan(water_px, missing_px=None):
+    """Per-cell pin weight, and the cells with no render that are filled with plain lake.
+
+    0 on land and for SHORE_FREE cells off any shore, fading in to 1 over RAMP. Cells with no render
+    (the margin where the map ends, holes far out in the lake) are neutral: they are not shore, they
+    are never pinned to their (black) render, and those touching pinned lake are pinned to plain
+    style water so the map's edge in the lake is not drawn from black."""
     H, W = water_px.shape[0] // LAT, water_px.shape[1] // LAT
-    frac = water_px.reshape(H, LAT, W, LAT).mean(axis=(1, 3))
-    dry = _drop_specks(frac < CELL_WET, SPECK)
+    cell = lambda a: a.reshape(H, LAT, W, LAT).mean(axis=(1, 3))
+    missing = cell(missing_px) >= CELL_WET if missing_px is not None else np.zeros((H, W), bool)
+    dry = _drop_specks((cell(water_px) < CELL_WET) & ~missing, SPECK)
     wet = torch.from_numpy((~dry).astype(np.float32))[None, None]
-    # core: no land within SHORE_FREE + RAMP cells (outside the canvas counts as water)
+    # core: no land within SHORE_FREE + RAMP cells (outside the canvas and missing cells count as water)
     r = SHORE_FREE + RAMP
     core = 1 - F.max_pool2d(F.pad(1 - wet, (r,) * 4, value=0.0), 2 * r + 1, stride=1)
     w = core.clone()
     for d in range(1, RAMP + 1):
         grown = F.max_pool2d(F.pad(core, (d,) * 4, value=0.0), 2 * d + 1, stride=1)
         w = torch.maximum(w, grown * (1 - d / (RAMP + 1)))
-    return (w * wet)[0, 0]
+    w = (w * wet)[0, 0]
+    miss = torch.from_numpy(missing)
+    w[miss] = 0
+    # missing cells next to fully pinned lake: plain lake (reach covers a whole canvas margin)
+    full = (w >= 0.999).float()[None, None]
+    near = F.max_pool2d(F.pad(full, (FILL_REACH,) * 4, value=0.0), 2 * FILL_REACH + 1, stride=1)[0, 0] > 0
+    fill = miss & near
+    w[fill] = 1.0
+    return w, fill.numpy()
 
 
-def recolour(render_rgb, water_px, blur=64):
+def pin_weights(water_px, missing_px=None):
+    return plan(water_px, missing_px)[0]
+
+
+def recolour(render_rgb, water_px, fill_cells=None, blur=64):
     """The render with its water pixels in the style's water colour. The render's large-scale tone (haze,
-    sun glare across the lake) is removed and its fine texture (ripples, boats) kept on top."""
+    sun glare across the lake) is removed and its fine texture (ripples, boats) kept on top.
+    fill_cells (H, W) bool: cells with no render, painted plain style water."""
     from PIL import Image, ImageFilter
     img = render_rgb.astype(np.float32)
     local = np.asarray(Image.fromarray(render_rgb.astype(np.uint8)).filter(ImageFilter.BoxBlur(blur))).astype(np.float32)
     out = img.copy()
     out[water_px] = np.clip(WATER_TO + (img[water_px] - local[water_px]) * WATER_GAIN, 0, 255)
+    if fill_cells is not None and fill_cells.any():
+        out[np.repeat(np.repeat(fill_cells, LAT, 0), LAT, 1)] = WATER_TO
     return out.astype(np.uint8)
 
 
-def encode_tiles(encode, img, weight, core=64, ctx=8):
+def encode_tiles(encode, img, weight, core=64, ctx=16):
     """VAE-encode `img` (H*LAT, W*LAT, 3 uint8) in overlapping tiles, only where weight > 0.
     encode(tensor (3, h, w) in [0, 1]) -> (C, h/LAT, w/LAT). Returns (C, H, W) or None."""
     H, W = weight.shape
