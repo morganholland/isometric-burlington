@@ -15,6 +15,7 @@ from PIL import Image
 sys.path.insert(0, os.environ.get("AITK", "/app/ai-toolkit"))
 sys.path.insert(0, str(Path(__file__).parent))
 import sampler as S  # noqa: E402
+import water as Wt  # noqa: E402
 
 BUCKET = "iso-burlington"
 CAPTION = open("/root/caption.txt").read().strip() if os.path.exists("/root/caption.txt") else ""
@@ -129,22 +130,41 @@ class WindowModel:
         return v[0].float()
 
 
-def render_canvas(angle, bx, by, have):
-    """Block render plus a MARGIN of neighbouring renders (black where no neighbour block exists)."""
+def render_canvas(angle, bx, by, have, suffix=".png", mode="RGB"):
+    """Block render plus a MARGIN of neighbouring renders (black / clear where no neighbour block exists)."""
     m = MARGIN * LAT
-    canvas = Image.new("RGB", (BLOCK + 2 * m, BLOCK + 2 * m))
+    canvas = Image.new(mode, (BLOCK + 2 * m, BLOCK + 2 * m))
     for dy in (-1, 0, 1):
         for dx in (-1, 0, 1):
             nb = (bx + dx * BLOCK, by + dy * BLOCK)
             if nb not in have:
                 continue
-            raw = r2_get(f"renders/a{angle}/{nb[0]}_{nb[1]}.png")
+            raw = r2_get(f"renders/a{angle}/{nb[0]}_{nb[1]}{suffix}")
             if raw is None:
                 continue
-            im = Image.open(io.BytesIO(raw)).convert("RGB")
+            im = Image.open(io.BytesIO(raw)).convert(mode)
             # paste so that canvas (0,0) = (bx - m, by - m)
             canvas.paste(im, (nb[0] - bx + m, nb[1] - by + m))
     return canvas
+
+
+def water_pin(model, angle, bx, by, have, canvas):
+    """Open lake cells pinned to the recoloured render (see water.py). Returns (clean, weight) or None."""
+    H = W = BLOCK // LAT + 2 * MARGIN
+    hpng = np.asarray(render_canvas(angle, bx, by, have, ".h.png", "RGBA"))
+    level = Wt.lake_level_cells(angle, bx - MARGIN * LAT, by - MARGIN * LAT, H, W)
+    wpx = Wt.water_pixels(Wt.heights_from_png(hpng), level)
+    weight = Wt.pin_weights(wpx)
+    if float(weight.max()) <= 0:
+        return None
+    img = Wt.recolour(np.asarray(canvas), wpx)
+    dev, dt = model.device_torch, model.torch_dtype
+
+    def enc(t):
+        with torch.no_grad():
+            return model.encode_images([t.to(dev) * 2 - 1], device=dev, dtype=dt)[0]
+    clean = Wt.encode_tiles(enc, img, weight)
+    return clean.to(dev), weight.to(dev)
 
 
 def neighbour_latents(run, angle, bx, by, C, dev):
@@ -180,6 +200,14 @@ def draw_block(model, run, angle, bx, by, have):
     canvas = render_canvas(angle, bx, by, have)
     clean, done = neighbour_latents(run, angle, bx, by, C, dev)
     pw = S.pin_map(H, W, MARGIN, done, strip=8, device=dev)
+    wp = water_pin(model, angle, bx, by, have, canvas)
+    water_share = 0.0
+    if wp is not None:
+        wclean, ww = wp
+        take = ww > pw
+        clean = torch.where(take[None], wclean, clean)
+        pw = torch.maximum(pw, ww)
+        water_share = round(float((ww[MARGIN:H - MARGIN, MARGIN:W - MARGIN] >= 0.999).float().mean()), 3)
     y0, x0 = by // LAT - MARGIN, bx // LAT - MARGIN
     noise = S.global_noise(C, y0, x0, H, W, SEED + angle, dev)
     wm = WindowModel(model, canvas)
@@ -195,7 +223,7 @@ def draw_block(model, run, angle, bx, by, have):
     s3.put_object(Bucket=BUCKET, Key=f"drawn/{run}/a{angle}/{bx}_{by}.png", Body=buf.getvalue(), ContentType="image/png")
     lb = io.BytesIO(); torch.save(block_lat.to(torch.float16).cpu(), lb)
     s3.put_object(Bucket=BUCKET, Key=f"latents/{run}/a{angle}/{bx}_{by}.pt", Body=lb.getvalue())
-    return {"block": [bx, by], "evals": evals, "seconds": round(time.time() - t0, 1), "pinned": [d for d, v in done.items() if v]}
+    return {"block": [bx, by], "evals": evals, "seconds": round(time.time() - t0, 1), "pinned": [d for d, v in done.items() if v], "water": water_share}
 
 
 def main():
