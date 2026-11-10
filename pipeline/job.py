@@ -125,6 +125,44 @@ def run_ls(job, out, log):
     return {"prefix": job["prefix"], "count": len(keys)}
 
 
+def run_scan_renders(job, out, log):
+    """Find renders with tiles that never loaded: transparent holes, and coarse (low-detail) patches.
+    Writes scan.json (per block: hole share, coarse share) plus a small overview mosaic of the angle
+    (holes in magenta) and a detail map (dark = little fine detail)."""
+    import numpy as np
+    from PIL import Image
+    a = job["angle"]
+    g = json.loads((ROOT / "data/grid.json").read_text())["angles"][a]
+    B, S = geo.BLOCK, 256
+    xs = [b[0] for b in g["blocks"]]; ys = [b[1] for b in g["blocks"]]
+    x0, y0 = min(xs), min(ys)
+    mos = Image.new("RGB", ((max(xs) - x0) // B * S + S, (max(ys) - y0) // B * S + S), (30, 30, 30))
+    det = Image.new("L", mos.size, 0)
+    rows = []
+    for bx, by in g["blocks"]:
+        im = np.asarray(Image.open(io.BytesIO(r2.get_bytes(f"renders/a{a}/{bx}_{by}.png"))).convert("RGBA"))
+        hole = im[..., 3] == 0
+        lum = im[..., :3].astype(np.float32) @ np.array([0.3, 0.59, 0.11], np.float32)
+        lap = np.abs(4 * lum[1:-1, 1:-1] - lum[:-2, 1:-1] - lum[2:, 1:-1] - lum[1:-1, :-2] - lum[1:-1, 2:])
+        lap = np.pad(lap, 1)
+        cell = lap.reshape(B // 16, 16, B // 16, 16).mean((1, 3))
+        hcell = hole.reshape(B // 16, 16, B // 16, 16).mean((1, 3)) > 0.5
+        rgbc = im[..., :3].reshape(B // 16, 16, B // 16, 16, 3).mean((1, 3))
+        water = (rgbc[..., 2] > rgbc[..., 0] + 12) & (rgbc.mean(-1) < 110)
+        coarse = (cell < job.get("coarse_lap", 2.5)) & ~hcell & ~water
+        rows.append({"block": [bx, by], "hole": round(float(hole.mean()), 4), "coarse": round(float(coarse.mean()), 4)})
+        th = im.copy(); th[hole] = (255, 0, 255, 255)
+        px, py = (bx - x0) // B * S, (by - y0) // B * S
+        mos.paste(Image.fromarray(th[..., :3]).resize((S, S), Image.BILINEAR), (px, py))
+        det.paste(Image.fromarray(np.clip(cell * 25, 0, 255).astype(np.uint8)).resize((S, S)), (px, py))
+        log.write(f"{bx},{by} hole {rows[-1]['hole']} coarse {rows[-1]['coarse']}\n"); log.flush()
+    rows.sort(key=lambda r: -(r["hole"] + r["coarse"]))
+    (out / "scan.json").write_text(json.dumps({"angle": a, "x0": x0, "y0": y0, "scale": S, "blocks": rows}, indent=0))
+    mos.save(out / "mosaic.jpg", quality=85); det.save(out / "detail.png")
+    bad = [r for r in rows if r["hole"] > 0.002 or r["coarse"] > 0.03]
+    return {"blocks": len(rows), "suspect": len(bad)}
+
+
 def run_tiles(job, out, log):
     """Drawn blocks -> WebP tile pyramid on R2 under <kind>/a<angle>/, then mark the angle ready in manifest.json.
     {"type":"tiles","name":"tiles-a0","run":"map","angle":0,"kind":"map-v1"}"""
@@ -407,15 +445,18 @@ def run_render_blocks(job, out, log):
     from PIL import Image
     a, shard, nsh = job["angle"], job["shard"], job["shards"]
     g = json.loads((ROOT / "data/grid.json").read_text())["angles"][a]
-    blocks = g["blocks"][shard::nsh]
+    force = {tuple(b) for b in job.get("force", [])}
+    blocks = [b for b in g["blocks"] if tuple(b) in force] if force else g["blocks"][shard::nsh]
+    blocks = blocks[shard::nsh] if force else blocks
     B, F = geo.BLOCK, geo.FRAME
     done, failed = 0, []
     for bx, by in blocks:
         key = f"renders/a{a}/{bx}_{by}.png"
-        try:
-            r2.client().head_object(Bucket=r2.BUCKET, Key=key); done += 1; continue
-        except Exception:  # noqa: BLE001
-            pass
+        if (bx, by) not in force:
+            try:
+                r2.client().head_object(Bucket=r2.BUCKET, Key=key); done += 1; continue
+            except Exception:  # noqa: BLE001
+                pass
         fr = [[bx + i * F, by + j * F] for j in range(B // F) for i in range(B // F)]
         d = out / f"b{bx}_{by}"; d.mkdir(parents=True, exist_ok=True)
         (d / "frames.json").write_text(json.dumps(fr))
@@ -648,7 +689,7 @@ def main(path):
     r2.put_json(f"runs/{name}/status.json", status)
     log = open(out / "log.txt", "w")
     try:
-        result = {"render": run_render, "probe": run_probe, "teacher_test": run_teacher_test, "teacher_set": run_teacher_set, "train": run_train, "render_blocks": run_render_blocks, "ls": run_ls, "draw": run_draw, "tiles": run_tiles}[job["type"]](job, out, log)
+        result = {"render": run_render, "probe": run_probe, "teacher_test": run_teacher_test, "teacher_set": run_teacher_set, "train": run_train, "render_blocks": run_render_blocks, "ls": run_ls, "draw": run_draw, "tiles": run_tiles, "scan_renders": run_scan_renders}[job["type"]](job, out, log)
         status.update(state="done", result=result)
     except Exception:
         status.update(state="failed", error=traceback.format_exc()[-3000:])

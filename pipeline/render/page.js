@@ -116,7 +116,7 @@ async function settle(cam, w, h, timeoutMs) {
   tiles.setCamera(cam);
   tiles.setResolution(cam, w, h);
   const t0 = performance.now();
-  let quiet = 0, iters = 0;
+  let quiet = 0, iters = 0, resets = 0;
   while (performance.now() - t0 < timeoutMs) {
     cam.updateMatrixWorld();
     tiles.update();
@@ -125,7 +125,20 @@ async function settle(cam, w, h, timeoutMs) {
     // settled = the tileset is loaded, this view uses tiles, nothing is queued, loading or
     // refused by a full cache, for 10 updates in a row (and never before 20 updates)
     const busy = s.queued + s.downloading + s.parsing + s.refused;
-    if (busy === 0 && tiles.root && s.visible > 0 && iters >= 20) { quiet++; if (quiet >= 10) return { ok: true, ms: performance.now() - t0, iters, stats: { ...s } }; }
+    if (busy === 0 && tiles.root && s.visible > 0 && iters >= 20) {
+      quiet++;
+      if (quiet >= 10) {
+        // a tile whose download failed (a 429 or a dropped connection) is never asked for again and
+        // leaves a hole or a blurry parent in the picture: ask again, a few times, then give up
+        if (s.failed > 0) {
+          if (resets >= 6) return { ok: false, ms: performance.now() - t0, iters, resets, stats: { ...s } };
+          resets++; tiles.resetFailedTiles(); quiet = 0;
+          await new Promise(r => setTimeout(r, 1500 * resets));
+          continue;
+        }
+        return { ok: true, ms: performance.now() - t0, iters, resets, stats: { ...s } };
+      }
+    }
     else quiet = 0;
     await new Promise(r => setTimeout(r, busy ? 60 : 30));
   }
