@@ -191,17 +191,22 @@ def run_scan_lake(job, out, log):
         h = Wt.heights_from_png(np.asarray(Image.open(io.BytesIO(r2.get_bytes(f"renders/a{a}/{bx}_{by}.h.png"))).convert("RGBA")))
         lv = Wt.fit_level(h, Wt.lake_level_cells(a, bx, by, n, n))
         inl = Wt.inland_water(h, rgb)
-        wpx = Wt.water_pixels(h, lv) | inl
-        low = (Wt.lake_band(h, lv) | inl | Wt.near_water_level(h, wpx)) & Wt.dark(rgb)
+        wl = Wt.water_like(rgb)
+        wpx = (Wt.water_pixels(h, lv) | inl) & wl
+        low = (Wt.lake_band(h, lv) | inl | Wt.near_water_level(h, wpx)) & Wt.dark(rgb) & wl
         w = Wt.plan(wpx, np.isnan(h), low)[0].numpy()
+        # what the planner pinned before it checked the render's colour: fields and meadows taken for ponds
+        wpx0 = Wt.water_pixels(h, lv) | inl
+        low0 = (Wt.lake_band(h, lv) | inl | Wt.near_water_level(h, wpx0)) & Wt.dark(rgb)
+        ponds = (Wt.plan(wpx0, np.isnan(h), low0)[0].numpy() > 0.5) & (w <= 0.5)
         pinned = w >= 0.999
-        if pinned.sum() < 50:
+        if pinned.sum() < 50 and ponds.sum() < 50:
             continue
         df = d.astype(np.float32).reshape(n, L, n, L, 3)
         mean = df.mean((1, 3))
         lum = df @ np.array([0.3, 0.59, 0.11], np.float32)
         std = lum.std((1, 3))
-        ref = np.median(mean[pinned], axis=0)
+        ref = np.median(mean[pinned], axis=0) if pinned.any() else np.array([5.0, 74.0, 125.0])
         dist = np.linalg.norm(mean - ref, axis=-1)
         flag = pinned & ((dist > job.get("dist", 35)) | (std > job.get("std", 14)))
         # isolated single cells are glints: keep flags with a flagged 8-neighbour
@@ -209,14 +214,16 @@ def run_scan_lake(job, out, log):
         nb = sum(np.roll(np.roll(f, dy, 0), dx, 1) for dy in (-1, 0, 1) for dx in (-1, 0, 1))[1:-1, 1:-1] - flag
         flag &= nb > 0
         k = int(flag.sum())
-        rows.append({"block": [bx, by], "pinned": int(pinned.sum()), "flagged": k})
-        log.write(f"{bx},{by} pinned {int(pinned.sum())} flagged {k}\n"); log.flush()
-        if k >= job.get("min_flag", 6):
+        rows.append({"block": [bx, by], "pinned": int(pinned.sum()), "flagged": k, "ponds": int(ponds.sum())})
+        log.write(f"{bx},{by} pinned {int(pinned.sum())} flagged {k} ponds {int(ponds.sum())}\n"); log.flush()
+        if k >= job.get("min_flag", 6) or ponds.sum() >= job.get("min_ponds", 60):
             th = Image.fromarray(d).resize((512, 512), Image.BILINEAR)
             m = Image.fromarray((flag * 255).astype(np.uint8)).resize((512, 512), Image.NEAREST)
             th.paste(Image.new("RGB", (512, 512), (255, 0, 0)), (0, 0), m.point(lambda v: 110 if v else 0))
+            mp = Image.fromarray((ponds * 255).astype(np.uint8)).resize((512, 512), Image.NEAREST)
+            th.paste(Image.new("RGB", (512, 512), (255, 0, 255)), (0, 0), mp.point(lambda v: 90 if v else 0))
             thumbs.append((f"{bx}_{by}", th))
-    rows.sort(key=lambda r: -r["flagged"])
+    rows.sort(key=lambda r: -(r["flagged"] + r["ponds"]))
     (out / "lake.json").write_text(json.dumps({"angle": a, "blocks": rows}, indent=0))
     if thumbs:
         cols = 4
@@ -227,7 +234,8 @@ def run_scan_lake(job, out, log):
             x, y = i % cols * 512, i // cols * 540
             sheet.paste(th, (x, y + 28)); dr.text((x + 6, y + 6), name, fill=(255, 255, 255))
         sheet.save(out / "flagged.jpg", quality=85)
-    return {"blocks": len(rows), "flagged": [r["block"] for r in rows if r["flagged"] >= job.get("min_flag", 6)]}
+    return {"blocks": len(rows), "flagged": [r["block"] for r in rows if r["flagged"] >= job.get("min_flag", 6)],
+            "ponds": [r["block"] for r in rows if r["ponds"] >= job.get("min_ponds", 60)]}
 
 
 def run_tiles(job, out, log):
