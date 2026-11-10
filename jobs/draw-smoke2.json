@@ -1,1 +1,0 @@
-{"type": "draw", "name": "draw-smoke2", "lora": "runs/train-lora3/out/train-lora3/train-lora3.safetensors", "angles": [0], "blocks": "0_0,4096_0,0_4096,4096_4096", "limit": 4, "max_hours": 2, "note": "VAE bf16 fix"}

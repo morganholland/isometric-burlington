@@ -82,6 +82,8 @@ def load_model(lora_path):
     if missing:   # keys that matched nothing: we would be drawing with the plain model
         raise RuntimeError(f"LoRA did not load cleanly: {str(missing)[:500]}")
     net.multiplier = 1.0; net.is_active = True
+    # LoRA modules hold only a weakref to their network: keep it alive for as long as the model is
+    model.network = net
     print("LoRA loaded, rank", dim)
     return model
 
