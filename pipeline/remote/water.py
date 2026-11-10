@@ -67,7 +67,9 @@ def fit_level(h, level_cells):
         return level_cells
     hist, edges = np.histogram(r[sel], bins=80, range=(-4, 4))
     mode = float(edges[hist.argmax()] + 0.05)
-    if not (-2.5 <= mode <= 0.5) or hist.max() < 0.05 * r.size:
+    # only ever lower the level: where the lake is near the prediction its surface is not one plane
+    # (the harbour spans -1.4..0 m) and the original band already holds it
+    if not (-2.5 <= mode < -1.0) or hist.max() < 0.05 * r.size:
         return level_cells
     return level_cells + (mode + 0.35)        # centre the (-1.5, +0.8) band on the lake
 
@@ -82,6 +84,66 @@ def water_pixels(h, level_cells):
     """Open water: within a metre or so of lake level, and flat (teacher.water_mask, per-cell level)."""
     gy, gx = np.gradient(np.nan_to_num(h))
     return lake_band(h, level_cells) & (np.hypot(gx, gy) < 0.05)
+
+
+INLAND_CELLS = 3000            # an inland water surface must be this big (~8 ha) to be pinned
+INLAND_LUM = 110              # ... and as dark as water in the render (roofs and lots are brighter)
+
+
+def _components(mask):
+    """8-connected components of a (H, W) bool array -> list of index arrays (ys, xs)."""
+    H, W = mask.shape
+    seen = np.zeros_like(mask)
+    comps = []
+    for y0, x0 in zip(*np.nonzero(mask)):
+        if seen[y0, x0]:
+            continue
+        stack, ys, xs = [(y0, x0)], [], []
+        seen[y0, x0] = True
+        while stack:
+            y, x = stack.pop()
+            ys.append(y); xs.append(x)
+            for dy in (-1, 0, 1):
+                for dx in (-1, 0, 1):
+                    yy, xx = y + dy, x + dx
+                    if 0 <= yy < H and 0 <= xx < W and mask[yy, xx] and not seen[yy, xx]:
+                        seen[yy, xx] = True
+                        stack.append((yy, xx))
+        comps.append((np.array(ys), np.array(xs)))
+    return comps
+
+
+def inland_water(h, rgb):
+    """Big flat dark water surfaces at any height (ponds and lakes other than Champlain): pixels.
+    In the tiles a lake is a level surface; a city has nothing that flat, that big and that dark."""
+    Hc, Wc = h.shape[0] // LAT, h.shape[1] // LAT
+    gy, gx = np.gradient(np.nan_to_num(h))
+    flat = (np.hypot(gx, gy) < 0.05) & np.isfinite(h)
+    out = np.zeros(h.shape, bool)
+    if flat.sum() < INLAND_CELLS * LAT * LAT * 0.5:
+        return out
+    v = h[flat]
+    edges = np.arange(np.floor(v.min()), np.ceil(v.max()) + 0.4, 0.2)
+    hist, edges = np.histogram(v, bins=edges)
+    lum = rgb.astype(np.float32) @ np.array([0.3, 0.59, 0.11], np.float32)
+    done = []
+    for i in np.argsort(hist)[::-1]:
+        if hist[i] < INLAND_CELLS * LAT * LAT * 0.25:
+            break
+        pk = edges[i] + 0.1
+        if any(abs(pk - d) < 1.0 for d in done):
+            continue
+        done.append(pk)
+        m = flat & (np.abs(h - pk) < 0.5)
+        cells = m.reshape(Hc, LAT, Wc, LAT).mean(axis=(1, 3)) >= CELL_WET
+        for ys, xs in _components(cells):
+            if len(ys) < INLAND_CELLS:
+                continue
+            keep = np.zeros((Hc, Wc), bool); keep[ys, xs] = True
+            px = m & np.repeat(np.repeat(keep, LAT, 0), LAT, 1)
+            if lum[px].mean() < INLAND_LUM:
+                out |= px
+    return out
 
 
 def _thin(mask, r):

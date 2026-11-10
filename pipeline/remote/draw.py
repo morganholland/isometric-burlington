@@ -161,8 +161,9 @@ def water_pin(model, angle, bx, by, have, canvas):
     level = Wt.lake_level_cells(angle, bx - MARGIN * LAT, by - MARGIN * LAT, H, W)
     h = Wt.heights_from_png(hpng)
     level = Wt.fit_level(h, level)
-    wpx = Wt.water_pixels(h, level)
-    weight, fill = Wt.plan(wpx, np.isnan(h), Wt.lake_band(h, level))
+    inland = Wt.inland_water(h, np.asarray(canvas))
+    wpx = Wt.water_pixels(h, level) | inland
+    weight, fill = Wt.plan(wpx, np.isnan(h), Wt.lake_band(h, level) | inland)
     if float(weight.max()) <= 0:
         return None
     img = Wt.recolour(np.asarray(canvas), wpx, fill)
