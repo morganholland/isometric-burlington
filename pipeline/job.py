@@ -163,6 +163,73 @@ def run_scan_renders(job, out, log):
     return {"blocks": len(rows), "suspect": len(bad)}
 
 
+def run_scan_lake(job, out, log):
+    """Find drawn blocks with things invented on open lake: cells the water planner pins (weight 1, from
+    the block's own render) whose drawn pixels are not plain water (far from the block's water colour,
+    or busy). Writes lake.json (blocks sorted by flagged cells) and flagged.jpg (thumbnails, flags red).
+    {"type":"scan_lake","name":"lake1-a0","angle":0,"run":"map2"}"""
+    import numpy as np
+    from PIL import Image
+    try:
+        import torch  # noqa: F401
+    except ImportError:
+        subprocess.run([sys.executable, "-m", "pip", "install", "-q", "torch", "--index-url",
+                        "https://download.pytorch.org/whl/cpu"], check=True)
+    sys.path.insert(0, str(ROOT / "pipeline/remote"))
+    import water as Wt
+    a, run = job["angle"], job.get("run", "map2")
+    g = json.loads((ROOT / "data/grid.json").read_text())["angles"][a]
+    B, L = geo.BLOCK, Wt.LAT
+    n = B // L
+    rows, thumbs = [], []
+    for bx, by in g["blocks"]:
+        try:
+            d = np.asarray(Image.open(io.BytesIO(r2.get_bytes(f"drawn/{run}/a{a}/{bx}_{by}.png"))).convert("RGB"))
+        except Exception:  # noqa: BLE001  (not drawn yet)
+            continue
+        rgb = np.asarray(Image.open(io.BytesIO(r2.get_bytes(f"renders/a{a}/{bx}_{by}.png"))).convert("RGB"))
+        h = Wt.heights_from_png(np.asarray(Image.open(io.BytesIO(r2.get_bytes(f"renders/a{a}/{bx}_{by}.h.png"))).convert("RGBA")))
+        lv = Wt.fit_level(h, Wt.lake_level_cells(a, bx, by, n, n))
+        inl = Wt.inland_water(h, rgb)
+        wpx = Wt.water_pixels(h, lv) | inl
+        low = (Wt.lake_band(h, lv) | inl | Wt.near_water_level(h, wpx)) & Wt.dark(rgb)
+        w = Wt.plan(wpx, np.isnan(h), low)[0].numpy()
+        pinned = w >= 0.999
+        if pinned.sum() < 50:
+            continue
+        df = d.astype(np.float32).reshape(n, L, n, L, 3)
+        mean = df.mean((1, 3))
+        lum = df @ np.array([0.3, 0.59, 0.11], np.float32)
+        std = lum.std((1, 3))
+        ref = np.median(mean[pinned], axis=0)
+        dist = np.linalg.norm(mean - ref, axis=-1)
+        flag = pinned & ((dist > job.get("dist", 35)) | (std > job.get("std", 14)))
+        # isolated single cells are glints: keep flags with a flagged 8-neighbour
+        f = np.pad(flag, 1)
+        nb = sum(np.roll(np.roll(f, dy, 0), dx, 1) for dy in (-1, 0, 1) for dx in (-1, 0, 1))[1:-1, 1:-1] - flag
+        flag &= nb > 0
+        k = int(flag.sum())
+        rows.append({"block": [bx, by], "pinned": int(pinned.sum()), "flagged": k})
+        log.write(f"{bx},{by} pinned {int(pinned.sum())} flagged {k}\n"); log.flush()
+        if k >= job.get("min_flag", 6):
+            th = Image.fromarray(d).resize((512, 512), Image.BILINEAR)
+            m = Image.fromarray((flag * 255).astype(np.uint8)).resize((512, 512), Image.NEAREST)
+            th.paste(Image.new("RGB", (512, 512), (255, 0, 0)), (0, 0), m.point(lambda v: 110 if v else 0))
+            thumbs.append((f"{bx}_{by}", th))
+    rows.sort(key=lambda r: -r["flagged"])
+    (out / "lake.json").write_text(json.dumps({"angle": a, "blocks": rows}, indent=0))
+    if thumbs:
+        cols = 4
+        sheet = Image.new("RGB", (cols * 512, ((len(thumbs) + cols - 1) // cols) * 540), (20, 20, 20))
+        from PIL import ImageDraw
+        dr = ImageDraw.Draw(sheet)
+        for i, (name, th) in enumerate(thumbs):
+            x, y = i % cols * 512, i // cols * 540
+            sheet.paste(th, (x, y + 28)); dr.text((x + 6, y + 6), name, fill=(255, 255, 255))
+        sheet.save(out / "flagged.jpg", quality=85)
+    return {"blocks": len(rows), "flagged": [r["block"] for r in rows if r["flagged"] >= job.get("min_flag", 6)]}
+
+
 def run_tiles(job, out, log):
     """Drawn blocks -> WebP tile pyramid on R2 under <kind>/a<angle>/, then mark the angle ready in manifest.json.
     {"type":"tiles","name":"tiles-a0","run":"map","angle":0,"kind":"map-v1"}"""
@@ -689,7 +756,7 @@ def main(path):
     r2.put_json(f"runs/{name}/status.json", status)
     log = open(out / "log.txt", "w")
     try:
-        result = {"render": run_render, "probe": run_probe, "teacher_test": run_teacher_test, "teacher_set": run_teacher_set, "train": run_train, "render_blocks": run_render_blocks, "ls": run_ls, "draw": run_draw, "tiles": run_tiles, "scan_renders": run_scan_renders}[job["type"]](job, out, log)
+        result = {"render": run_render, "probe": run_probe, "teacher_test": run_teacher_test, "teacher_set": run_teacher_set, "train": run_train, "render_blocks": run_render_blocks, "ls": run_ls, "draw": run_draw, "tiles": run_tiles, "scan_renders": run_scan_renders, "scan_lake": run_scan_lake}[job["type"]](job, out, log)
         status.update(state="done", result=result)
     except Exception:
         status.update(state="failed", error=traceback.format_exc()[-3000:])
