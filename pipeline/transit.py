@@ -2,6 +2,9 @@
 can move buses along their routes by the timetable (GMT's live positions need an API key).
 
 usage: python3 pipeline/transit.py <unzipped GTFS dir> [out.json]
+then push a {"type":"transit_heights"} job and copy its runs/<name>/transit.json over viewer/transit.json:
+it replaces the DEM heights (a coarse surface model with trees and buildings) with road heights read
+from the map's own height renders.
 
 Output (compact; times are seconds after the service day's midnight, may exceed 24 h):
   {"routes": {rid: [short_name, "#color", long_name]},
