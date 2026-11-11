@@ -1,4 +1,4 @@
-// Live aircraft over the map (adsb.lol via /api/flights), drawn at their altitude with a shadow on the
+// Live aircraft over the map (adsb.lol, or adsb.fi as a fallback, via /api/flights), drawn at their altitude with a shadow on the
 // ground, and moved smoothly between updates by their speed and track.
 import { llaToEnu, enuToPx } from './geo.js';
 

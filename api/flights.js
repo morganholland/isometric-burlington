@@ -14,7 +14,9 @@ const failedAt = new Map();       // per warm instance
 let lastGood = null;              // { at, ac }
 
 export function normalize(j) {
-  return (j.ac || j.aircraft || [])
+  const list = j && (j.ac ?? j.aircraft);
+  if (!Array.isArray(list)) throw new Error('unexpected response');   // e.g. an error or rate-limit body
+  return list
     .filter(a => typeof a.lat === 'number' && typeof a.lon === 'number' && (a.seen_pos ?? 0) < 60)
     .map(a => ({
       id: a.hex, flight: (a.flight || '').trim(), type: a.t || '', lat: a.lat, lon: a.lon,
@@ -29,28 +31,28 @@ function order(now) {
   return [...SOURCES.filter(healthy), ...SOURCES.filter(s => !healthy(s))];
 }
 
-export async function getAircraft(fetchImpl = fetch, now = Date.now()) {
+export async function getAircraft(fetchImpl = fetch, clock = Date.now) {
   const errors = [];
-  for (const s of order(now)) {
+  for (const s of order(clock())) {
     try {
       const r = await fetchImpl(s.url, { headers: { 'User-Agent': 'isometric-burlington (map viewer)' }, signal: AbortSignal.timeout(TIMEOUT_MS) });
       if (!r.ok) throw new Error(`upstream ${r.status}`);
       const ac = normalize(await r.json());
       failedAt.delete(s.name);
-      lastGood = { at: now, ac };
+      lastGood = { at: clock(), ac };
       return { source: s.name, ac };
     } catch (e) {
-      failedAt.set(s.name, now);
+      failedAt.set(s.name, clock());
       errors.push(`${s.name}: ${e.message || e}`);
     }
   }
+  const now = clock();
   if (lastGood && now - lastGood.at < STALE_MS) {
     const extra = (now - lastGood.at) / 1000;      // positions are that much older now
-    return { source: 'stale', ac: lastGood.ac.map(a => ({ ...a, age: a.age + extra })) };
+    const ac = lastGood.ac.map(a => ({ ...a, age: a.age + extra })).filter(a => a.age < 60);   // the client stops dead-reckoning at 60 s
+    return { source: 'stale', ac };
   }
-  const err = new Error(errors.join('; '));
-  err.all = true;
-  throw err;
+  throw new Error(errors.join('; '));
 }
 
 export function _reset() { failedAt.clear(); lastGood = null; }
@@ -61,7 +63,10 @@ export default async function handler(req, res) {
     res.setHeader('Cache-Control', 's-maxage=5, stale-while-revalidate=10');
     res.status(200).json({ now: Date.now(), source, ac });
   } catch (e) {
+    // Every feed is down: no planes is a fine answer for a map. A 200 lets the CDN cache it for 15 s
+    // (it won't cache a 5xx), so the dead feeds aren't hit on every poll.
+    console.error('flights: all sources failed:', e.message || e);
     res.setHeader('Cache-Control', 's-maxage=15');
-    res.status(503).json({ error: String(e.message || e), ac: [] });
+    res.status(200).json({ now: Date.now(), source: 'none', error: String(e.message || e), ac: [] });
   }
 }
