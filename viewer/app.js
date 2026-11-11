@@ -217,8 +217,11 @@ if (VENMO) {
   $('#tip-link').href = url; $('#tip').hidden = false;
   const inline = document.querySelector('.tip-inline'); inline.href = url; inline.hidden = false;
   document.querySelector('.tip-sep').hidden = false;
-  $('#tip-link').addEventListener('click', () => track('tip_clicked', { placement: 'about' }));
-  inline.addEventListener('click', () => track('tip_clicked', { placement: 'footer' }));
+  // auxclick counts a middle-click open too
+  for (const ev of ['click', 'auxclick']) {
+    $('#tip-link').addEventListener(ev, e => { if (ev === 'click' || e.button === 1) track('tip_clicked', { placement: 'about' }); });
+    inline.addEventListener(ev, e => { if (ev === 'click' || e.button === 1) track('tip_clicked', { placement: 'footer' }); });
+  }
 }
 
 // ---------- how to use: a one-time hint, and the ? panel ----------

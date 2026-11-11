@@ -6,7 +6,7 @@ const KEY = 'phc_C8Q757FTA7XJb2cyY2DyeW5sxhniMDep2DuXKUWLBukc'; // public projec
 const LIVE_HOSTS = ['isoburlington.com', 'www.isoburlington.com'];
 
 // every event is also kept here so tests (and curious people) can see what would be sent
-const log = (window.__isoEvents = []);
+const log = (globalThis.__isoEvents = []);
 let live = false;
 
 export function initTracking(host = location.hostname) {
@@ -23,10 +23,26 @@ export function initTracking(host = location.hostname) {
     capture_pageview: true,
     capture_pageleave: true,
     disable_session_recording: true,
+    // the URL hash holds the map position (#a=..&x=..&y=..&z=..), which after a search is the
+    // place someone looked up: never send it
+    before_send: stripHash,
   });
   live = true;
   return true;
 }
+
+// PostHog copies the page URL into several properties ($current_url, $session_entry_url,
+// $initial_current_url, ...): cut the hash off any of our own URLs, wherever it sits
+const OWN_URL = /^https?:\/\/(www\.)?isoburlington\.com\b/;
+function scrub(obj, depth = 0) {
+  if (!obj || typeof obj !== 'object' || depth > 3) return;
+  for (const k of Object.keys(obj)) {
+    const v = obj[k];
+    if (typeof v === 'string') { if (OWN_URL.test(v) && v.includes('#')) obj[k] = v.split('#')[0]; }
+    else scrub(v, depth + 1);
+  }
+}
+export function stripHash(e) { scrub(e); return e; }
 
 export function track(event, props = {}) {
   log.push({ event, props });
