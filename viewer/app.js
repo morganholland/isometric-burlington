@@ -5,6 +5,9 @@ import { nightFactor, fetchWeather, sunTimes } from './sky.js';
 import { WeatherFX } from './fx.js';
 import { BusLayer } from './transit.js';
 import { PlaneLayer } from './planes.js';
+import { initTracking, track } from './track.js';
+
+initTracking();
 
 const TILE_BASE = (window.ISO_CONFIG && window.ISO_CONFIG.tileBase) || '';
 const GROUND_U = 40;           // typical ground height (m) used when turning the map
@@ -66,6 +69,7 @@ function rotate(dir) {
   const [x, y] = toPx(map.getCenter());
   const [e, n] = pxToEnu(state.angle, x, y, GROUND_U);
   const a = (state.angle + dir + 4) % 4;
+  track('map_rotated', { angle: a, direction: dir < 0 ? 'left' : 'right' });
   const [nx, ny] = enuToPx(a, e, n, GROUND_U);
   document.body.classList.add('turning');
   setTimeout(() => document.body.classList.remove('turning'), 260);
@@ -103,7 +107,7 @@ function renderResults(list) {
     const b = document.createElement('button');
     const [name, ...rest] = r.display_name.split(', ');
     b.innerHTML = `<b></b><span></span>`; b.querySelector('b').textContent = name; b.querySelector('span').textContent = rest.slice(0, 3).join(', ');
-    b.addEventListener('click', () => { ul.hidden = true; $('#q').blur(); goTo(+r.lat, +r.lon, name); });
+    b.addEventListener('click', () => { track('place_searched', { via: 'list', found: true }); ul.hidden = true; $('#q').blur(); goTo(+r.lat, +r.lon, name); });
     li.appendChild(b); ul.appendChild(li);
   }
   ul.hidden = false;
@@ -115,7 +119,7 @@ $('#q').addEventListener('input', e => {
   if (q.length < 3) { $('#results').hidden = true; return; }
   debounce = setTimeout(() => search(q).then(renderResults).catch(() => {}), 350);
 });
-$('#search').addEventListener('submit', e => { e.preventDefault(); const q = $('#q').value.trim(); if (q) search(q).then(l => l[0] ? goTo(+l[0].lat, +l[0].lon, l[0].display_name.split(', ')[0]) : renderResults([])); });
+$('#search').addEventListener('submit', e => { e.preventDefault(); const q = $('#q').value.trim(); if (q) search(q).then(l => { track('place_searched', { via: 'enter', found: !!l[0] }); return l; }).then(l => l[0] ? goTo(+l[0].lat, +l[0].lon, l[0].display_name.split(', ')[0]) : renderResults([])); });
 document.addEventListener('click', e => { if (!e.target.closest('#search')) $('#results').hidden = true; });
 
 function placeMarker(lat, lon, label) {
@@ -213,6 +217,8 @@ if (VENMO) {
   $('#tip-link').href = url; $('#tip').hidden = false;
   const inline = document.querySelector('.tip-inline'); inline.href = url; inline.hidden = false;
   document.querySelector('.tip-sep').hidden = false;
+  $('#tip-link').addEventListener('click', () => track('tip_clicked', { placement: 'about' }));
+  inline.addEventListener('click', () => track('tip_clicked', { placement: 'footer' }));
 }
 
 // ---------- how to use: a one-time hint, and the ? panel ----------
@@ -220,7 +226,7 @@ const store = { get: k => { try { return localStorage.getItem(k); } catch { retu
 function showAbout(open) {
   $('#about').hidden = !open;
   $('#about-btn').setAttribute('aria-expanded', String(open));
-  if (open) { hideHint(); $('#about-close').focus(); }
+  if (open) { hideHint(); $('#about-close').focus(); track('about_opened'); }
 }
 function hideHint() { if (!$('#hint').hidden) { $('#hint').hidden = true; store.set('iso-hint-seen', '1'); } }
 if (!store.get('iso-hint-seen')) {
