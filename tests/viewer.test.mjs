@@ -189,3 +189,24 @@ test('first visit shows a hint once; ? explains how to use the map', async () =>
   assert.deepEqual(errors, []);
   await ctx.close();
 });
+
+test('analytics: records turns, guide opens and tips, and stays silent off the live domain', async () => {
+  const { ctx, page, errors } = await open({ viewport: { width: 1400, height: 880 } });
+  const posthogCalls = [];
+  page.on('request', r => { if (/posthog\.com/.test(r.url())) posthogCalls.push(r.url()); });
+  await page.waitForFunction(() => window.__iso.map._loaded);
+  await page.click('#rot-right');
+  await page.click('#about-btn');
+  await page.waitForSelector('#about:not([hidden])');
+  // the Venmo link opens a new tab; keep the click local
+  await ctx.route('https://venmo.com/**', r => r.fulfill({ body: 'ok' }));
+  await page.click('#tip-link');
+  const events = await page.evaluate(() => window.__isoEvents);
+  assert.deepEqual(events.map(e => e.event), ['map_rotated', 'about_opened', 'tip_clicked']);
+  assert.deepEqual(events[0].props, { angle: 1, direction: 'right' });
+  assert.deepEqual(events[2].props, { placement: 'about' });
+  assert.equal(await page.evaluate(() => typeof window.posthog), 'undefined', 'PostHog is not loaded on localhost');
+  assert.deepEqual(posthogCalls, []);
+  assert.deepEqual(errors, []);
+  await ctx.close();
+});
