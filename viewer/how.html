@@ -1,0 +1,56 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>How it was made · Isometric Burlington</title>
+<meta name="description" content="How Isometric Burlington was made: who drew what, what the AI got wrong, and who deserves the credit.">
+<meta property="og:title" content="How Isometric Burlington was made">
+<meta property="og:description" content="Who drew what, what the AI got wrong, and who deserves the credit.">
+<meta property="og:image" content="https://isoburlington.com/press/og.jpg">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,700&family=IBM+Plex+Sans:wght@400;500;600&family=IBM+Plex+Mono:wght@500&display=swap">
+<link rel="stylesheet" href="./how.css">
+</head>
+<body>
+<main>
+  <a class="back" href="./">← Back to the map</a>
+  <p class="eyebrow">Isometric Burlington</p>
+  <h1>How it was made, and what's wrong with it</h1>
+  <p class="lede">I didn't draw this map. An AI image model did, one block at a time, and I spent my evenings getting it to behave. Here is exactly what that means, so you can decide for yourself what it's worth.</p>
+
+  <figure>
+    <img src="./press/downtown-from-the-lake.jpg" alt="Downtown Burlington drawn as an isometric illustration, seen from over the lake" width="3200" height="2000" loading="lazy">
+    <figcaption>Downtown from over the lake. Imagery Google · Cesium ion · Drawn with Qwen-Image.</figcaption>
+  </figure>
+
+  <h2>Who did what</h2>
+  <dl class="who">
+    <div><dt>Google</dt><dd>photographed Burlington from the air and built the 3D model every picture starts from.</dd></div>
+    <div><dt>A camera I set up</dt><dd>looks at that model from 30 degrees up, from four sides, and takes 458 pictures that line up to the pixel. One pixel is 23 cm of city.</dd></div>
+    <div><dt>A teacher model</dt><dd>redrew about 400 of those pictures as illustrations: flat colour, dark outlines, a 1990s city-builder look. Automatic checks threw out the ones that moved a building or invented a lake.</dd></div>
+    <div><dt>A student model</dt><dd>the open-source Qwen-Image, learned the style from those pairs and then drew all of Burlington, South Burlington and Winooski, four times over.</dd></div>
+    <div><dt>Me</dt><dd>chose the area, the camera and the look, decided what counted as a failed drawing, threw out and redid the worst blocks, and built the map you move around in: the turning, the real sunset, the weather, the buses and the planes.</dd></div>
+  </dl>
+  <p>I'm not a software engineer, and I'm not an illustrator. I wrote almost none of the code by hand either. I directed AI tools the whole way through, the same way I'd brief a contractor.</p>
+
+  <h2>What's wrong with it</h2>
+  <p>A neighbour on r/burlington put it better than I could: the charm wears off when you zoom in and see <q>mushy textures and cars melting on the streets.</q> That's fair, and it's worth explaining.</p>
+  <ul class="wrong">
+    <li><b>The cars melt.</b> Google's 3D model turns every parked car into a soft blob, and the drawing model faithfully inks the blob. Fixing it means redrawing the map with the streets cleaned up first.</li>
+    <li><b>It goes soft when you zoom far in.</b> The drawing has a real size, 23 cm per pixel. Past that you're enlarging it, like holding a magnifying glass to a printed poster. The street names and labels that appear up close are drawn fresh at any size, so they stay sharp.</li>
+    <li><b>Small details are invented.</b> Signs are sign-shaped, not readable. A window count may be off. Your porch might be the wrong colour. It's an illustration of the city, not a survey of it.</li>
+    <li><b>It's a snapshot.</b> Google's imagery is a year or more old, so new buildings are missing and gone ones remain.</li>
+  </ul>
+  <p>What a hand-drawn map has that this one doesn't is a person deciding, building by building, what matters. I can't fake that with pixels. Where I can add it is in the choosing: the places picked out on the map and the notes on them are mine.</p>
+
+  <h2>Credit where it's due</h2>
+  <p>The method isn't mine. I followed <a href="https://iso.sloptoronto.ca" target="_blank" rel="noopener">Isometric Toronto</a> by John Fewell, who followed Tiny London by Boris Starkov, who built on Isometric NYC by Andy Coenen. Each of them wrote down how they did it, which is the only reason someone like me could.</p>
+  <p class="credits">3D imagery © Google, via Cesium ion. Drawn with Qwen-Image. Map data and search © OpenStreetMap contributors. Weather from the National Weather Service. Bus schedule from Green Mountain Transit. Flights from adsb.lol (ODbL). A non-commercial hobby project.</p>
+
+  <h2>Tell me what's wrong on your street</h2>
+  <p>If the map gets your block badly wrong, or there's a place that deserves a note, I'd like to hear it. The longer story of building this is on my blog, <a href="https://morgz.org" target="_blank" rel="noopener">morgz.org</a>.</p>
+  <p><a class="cta" href="./">Open the map</a></p>
+</main>
+</body>
+</html>
