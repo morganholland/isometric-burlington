@@ -5,6 +5,7 @@ import { nightFactor, fetchWeather, sunTimes } from './sky.js';
 import { WeatherFX } from './fx.js';
 import { BusLayer } from './transit.js';
 import { PlaneLayer } from './planes.js';
+import { LabelLayer } from './labels.js';
 import { initTracking, track } from './track.js';
 
 initTracking();
@@ -62,6 +63,8 @@ function showAngle(a, centerPx, zoom) {
   $('#compass').setAttribute('aria-label', `North is ${['to the left', 'down', 'to the right', 'up'][a]}`);
   if (state.marker) placeMarker(state.marker.lat, state.marker.lon, state.marker.label, false);
   applySky();
+  labels.draw();
+  if (places.list.length) drawPlaces();
   saveHash();
 }
 
@@ -89,6 +92,9 @@ function readHash() {
   return { a: (+p.get('a') || 0) % 4, x: +p.get('x'), y: +p.get('y'), z: +p.get('z') };
 }
 map.on('moveend', saveHash);
+// the paper grain shows more the further past the drawing's own resolution (zoom 0) you go
+const setPaper = () => document.documentElement.style.setProperty('--paper', Math.min(1, Math.max(0, (map.getZoom() + 0.5) / 2.5)).toFixed(2));
+map.on('zoomend', setPaper);
 
 // ---------- search ----------
 let searchCtl;
@@ -136,6 +142,66 @@ function goTo(lat, lon, label) {
   map.flyTo(toLL(...p), Math.max(map.getZoom(), -1), { duration: 1.1 });
 }
 
+// ---------- hand-picked places: a pin and a short note each ----------
+const places = { list: [], markers: [], open: null };
+function drawPlaces() {
+  for (const m of places.markers) map.removeLayer(m);
+  places.markers = [];
+  if (!$('#show-places').checked) return;
+  places.list.forEach((p, i) => {
+    const [x, y] = latLonToPx(state.angle, p.lat, p.lon, p.h);
+    if (!inRegion(state.angle, x, y)) return;
+    const esc = t => t.replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' })[c]);
+    const icon = L.divIcon({ className: 'place', iconSize: [0, 0],
+      html: `<button type="button" class="place-pin" data-i="${i}" aria-label="${esc(p.name)}: read the note"><span class="place-mark"></span><span class="place-name">${esc(p.name)}</span></button>` });
+    const m = L.marker(toLL(x, y), { icon, keyboard: false, zIndexOffset: 500 }).addTo(map);
+    places.markers.push(m);
+  });
+  zoomBand();
+}
+function openPlace(i, via) {
+  const p = places.list[i];
+  places.open = i;
+  $('#place h2').textContent = p.name;
+  $('#place p').textContent = p.note;
+  $('#place').hidden = false;
+  $('#places-list').hidden = true; $('#places-btn').setAttribute('aria-expanded', 'false');
+  track('place_opened', { place: p.name, via });
+}
+function closePlace() { $('#place').hidden = true; places.open = null; }
+function flyToPlace(i) {
+  const p = places.list[i];
+  const [x, y] = latLonToPx(state.angle, p.lat, p.lon, p.h);
+  map.flyTo(toLL(x, y), Math.max(map.getZoom(), -0.5), { duration: 1.1 });
+  openPlace(i, 'list');
+}
+// pins show from the overview in; their names once you are close enough to read the streets
+function zoomBand() {
+  const z = map.getZoom();
+  $('#map').classList.toggle('places-far', z < -3.75);
+  $('#map').classList.toggle('places-named', z >= -1.25);
+}
+map.on('zoomend', zoomBand);
+fetch('labels.json').then(r => r.ok ? r.json() : null).then(d => {
+  if (!d?.places) return;
+  places.list = d.places.map(([name, note, lat, lon, h]) => ({ name, note, lat, lon, h }));
+  const ul = $('#places-list ul');
+  places.list.forEach((p, i) => {
+    const li = document.createElement('li'), b = document.createElement('button');
+    b.type = 'button'; b.textContent = p.name; b.addEventListener('click', () => flyToPlace(i));
+    li.appendChild(b); ul.appendChild(li);
+  });
+  $('#places-btn').hidden = false;
+  drawPlaces();
+}).catch(() => {});
+$('#place-close').addEventListener('click', closePlace);
+$('#map').addEventListener('click', e => { const b = e.target.closest('.place-pin'); if (b) { e.stopPropagation(); openPlace(+b.dataset.i, 'pin'); } });
+$('#show-places').addEventListener('change', drawPlaces);
+$('#places-btn').addEventListener('click', () => {
+  const l = $('#places-list'); l.hidden = !l.hidden; $('#places-btn').setAttribute('aria-expanded', String(!l.hidden));
+  if (!l.hidden) { $('#layers').hidden = true; $('#layers-btn').setAttribute('aria-expanded', 'false'); }
+});
+
 // ---------- sky: night + weather ----------
 const fx = new WeatherFX($('#fx'));
 
@@ -150,6 +216,8 @@ function inRegion(a, x, y) {
   }
   return inside;
 }
+const labels = new LabelLayer($('#labels'), map, toLL, () => state.angle, (x, y) => inRegion(state.angle, x, y));
+labels.load('labels.json').catch(() => { labels.data = null; });
 const buses = new BusLayer($('#buses'), map, toLL, () => state.angle, (x, y) => inRegion(state.angle, x, y));
 buses.load('transit.json').catch(() => { buses.data = null; });
 const planes = new PlaneLayer($('#planes'), map, toLL, () => state.angle);
@@ -181,6 +249,7 @@ map.on('mousemove', busTip);
 map.on('click', busTip);
 map.on('mouseout', () => { tipAt = null; $('#bus-tip').hidden = true; });
 map.on('movestart zoomstart', () => { tipAt = null; $('#bus-tip').hidden = true; });
+$('#show-labels').addEventListener('change', e => { labels.on = e.target.checked; labels.draw(); });
 $('#show-buses').addEventListener('change', e => { buses.on = e.target.checked; if (!buses.on) $('#bus-tip').hidden = true; });
 $('#show-planes').addEventListener('change', e => { planes.on = e.target.checked; if (!planes.on) $('#bus-tip').hidden = true; });
 function applySky() {
@@ -188,7 +257,7 @@ function applySky() {
   const night = state.timeMode === 'day' ? 0 : state.timeMode === 'night' ? 1 : live;
   document.documentElement.style.setProperty('--night', night.toFixed(3));
   document.body.classList.toggle('is-night', night > 0.5);
-  buses.night = night; planes.night = night;
+  buses.night = night; planes.night = night; labels.night = night; labels.draw();
   const w = state.weatherMode === 'live' ? (state.weather || { kind: 'clear' }) : { kind: state.weatherMode, heavy: false, windMph: 8, windFromDeg: 300 };
   fx.set(w.kind, w.heavy, w.windMph, w.windFromDeg, GRID.headings[state.angle]);
   const t = new Date().toLocaleTimeString('en-US', { timeZone: 'America/New_York', hour: 'numeric', minute: '2-digit' });
@@ -207,7 +276,7 @@ $('#rot-left').addEventListener('click', () => rotate(-1));
 $('#rot-right').addEventListener('click', () => rotate(1));
 $('#zoom-in').addEventListener('click', () => map.zoomIn());
 $('#zoom-out').addEventListener('click', () => map.zoomOut());
-$('#layers-btn').addEventListener('click', () => { const p = $('#layers'); p.hidden = !p.hidden; $('#layers-btn').setAttribute('aria-expanded', String(!p.hidden)); });
+$('#layers-btn').addEventListener('click', () => { const p = $('#layers'); p.hidden = !p.hidden; $('#layers-btn').setAttribute('aria-expanded', String(!p.hidden)); if (!p.hidden) { $('#places-list').hidden = true; $('#places-btn').setAttribute('aria-expanded', 'false'); } });
 document.querySelectorAll('input[name=time]').forEach(i => i.addEventListener('change', () => { state.timeMode = i.value; applySky(); }));
 document.querySelectorAll('input[name=wx]').forEach(i => i.addEventListener('change', () => { state.weatherMode = i.value; applySky(); }));
 // ---------- tip jar: shown only once a Venmo username is set ----------
@@ -245,6 +314,7 @@ $('#about-close').addEventListener('click', () => { showAbout(false); $('#about-
 
 addEventListener('keydown', e => {
   if (e.key === 'Escape' && !$('#about').hidden) { showAbout(false); $('#about-btn').focus(); return; }
+  if (e.key === 'Escape' && !$('#place').hidden) { closePlace(); return; }
   if (e.target.matches('input[type=search], input[type=text], textarea')) return;
   if (e.key === '?') { showAbout($('#about').hidden); return; }
   if (e.key === 'r' || e.key === ']') rotate(1);
@@ -275,8 +345,9 @@ async function loadManifest() {
       map.fitBounds(L.latLngBounds(grid.angles[0].region.map(([x, y]) => toLL(x, y))), { padding: [40, 40], animate: false });
     }
   }
+  setPaper();
   refreshWeather();
   const st = sunTimes();
   $('#sun').textContent = `Sunset ${st.sunset.toLocaleTimeString('en-US', { timeZone: 'America/New_York', hour: 'numeric', minute: '2-digit' })}`;
-  window.__iso = { map, state, rotate, goTo, toPx, buses, planes, showAbout };
+  window.__iso = { map, state, rotate, goTo, toPx, buses, planes, labels, places, openPlace, showAbout };
 })();

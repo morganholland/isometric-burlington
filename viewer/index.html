@@ -17,14 +17,16 @@
 <meta name="twitter:description" content="Burlington, Vermont drawn as a city-builder map you can turn.">
 <meta name="twitter:image" content="https://isoburlington.com/press/og.jpg">
 <link rel="preconnect" href="https://fonts.googleapis.com">
-<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,700&family=IBM+Plex+Sans:wght@400;500;600&family=IBM+Plex+Mono:wght@500&display=swap">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,700&family=IBM+Plex+Sans:wght@400;500;600&family=IBM+Plex+Mono:wght@500&family=IBM+Plex+Serif:ital,wght@1,500&display=swap">
 <link rel="stylesheet" href="./leaflet.css">
 <link rel="stylesheet" href="./style.css">
 <script>window.ISO_CONFIG = { tileBase: "__TILE_BASE__" };</script>
 </head>
 <body>
 <div id="map" aria-label="Isometric map of Burlington, Vermont"></div>
+<div id="paper" aria-hidden="true"></div>
 <div id="night" aria-hidden="true"></div>
+<canvas id="labels" aria-hidden="true"></canvas>
 <canvas id="buses" aria-hidden="true"></canvas>
 <canvas id="planes" aria-hidden="true"></canvas>
 <div id="bus-tip" class="card" hidden><span class="sw"></span><div><b></b><div class="long"></div><div class="until"></div></div></div>
@@ -55,6 +57,7 @@
     <button id="zoom-in" type="button" aria-label="Zoom in">+</button>
     <button id="zoom-out" type="button" aria-label="Zoom out">−</button>
   </div>
+  <button id="places-btn" class="card single" type="button" aria-expanded="false" aria-controls="places-list" title="Places worth a look" hidden>★</button>
   <button id="layers-btn" class="card single" type="button" aria-expanded="false" aria-controls="layers" title="Time, weather and buses">◐</button>
   <button id="about-btn" class="card single" type="button" aria-expanded="false" aria-controls="about" title="How to use this map">?</button>
 </div>
@@ -72,10 +75,11 @@
     <li><b>Turn the city:</b> <b>⟲ ⟳</b> (or the <kbd>[</kbd> <kbd>]</kbd> keys) show it from all four sides.</li>
     <li><b>Find a place:</b> search any street, address or landmark at the top.</li>
     <li><b>Buses and planes:</b> hover or tap one to see its route or flight.</li>
-    <li><b>◐</b> switches time of day, weather, buses and planes.</li>
+    <li><b>★</b> lists places worth a look, each with a short note. Tap a pin on the map to read one.</li>
+    <li><b>◐</b> switches time of day, weather, names, buses and planes.</li>
   </ul>
   <h3>What you're looking at</h3>
-  <p>Every block of Burlington, South Burlington and Winooski was redrawn in a city-builder style by an open-source AI image model, working from Google's 3D map of the city. It's an illustration: small details are invented, and some won't match what's really there.</p>
+  <p>Every block of Burlington, South Burlington and Winooski was redrawn in a city-builder style by an open-source AI image model, working from Google's 3D map of the city. It's an illustration: small details are invented, and some won't match what's really there. Street and place names are drawn on top from OpenStreetMap, so they stay sharp when you zoom in. <a href="./how.html">How it was made, and what's wrong with it</a>.</p>
   <p>The sky follows Burlington's real sunset and the current weather at BTV. Buses move along their routes on GMT's published timetable, not live GPS. Planes are live positions from ADS-B receivers.</p>
   <h3>Credits</h3>
   <p class="credits">Inspired by <a href="https://iso.sloptoronto.ca" target="_blank" rel="noopener">Isometric Toronto</a> by John Fewell. 3D map imagery © Google, via Cesium ion. Drawn with Qwen-Image. Search © OpenStreetMap contributors. Weather from the National Weather Service. Bus schedule from Green Mountain Transit. Flights from adsb.lol (ODbL).</p>
@@ -83,6 +87,17 @@
   <p>Morgan, in South Burlington, Vermont. More of what I make is on my blog, <a href="https://morgz.org" target="_blank" rel="noopener">morgz.org</a>.</p>
   <p class="privacy">The site counts visits and clicks without cookies or accounts, and never records what you search for or where you are on the map.</p>
   <p id="tip" class="tip" hidden>If the map made you smile, <a id="tip-link" class="tip-btn" href="#" target="_blank" rel="noopener">buy me a coffee on Venmo ☕</a></p>
+</section>
+
+<section id="places-list" class="card panel places-list" aria-label="Places worth a look" hidden>
+  <h2>Places worth a look</h2>
+  <ul></ul>
+</section>
+
+<section id="place" class="card place-card" role="dialog" aria-modal="false" aria-labelledby="place-title" hidden>
+  <button id="place-close" class="about-close" type="button" aria-label="Close">×</button>
+  <h2 id="place-title"></h2>
+  <p></p>
 </section>
 
 <section id="layers" class="card panel" hidden>
@@ -99,12 +114,14 @@
     <label><input type="radio" name="wx" value="fog"> Fog</label>
   </fieldset>
   <fieldset><legend>On the map</legend>
+    <label><input type="checkbox" id="show-labels" checked> Street and place names</label>
+    <label><input type="checkbox" id="show-places" checked> Places worth a look (★)</label>
     <label><input type="checkbox" id="show-buses" checked> GMT buses (timetable)</label>
     <label><input type="checkbox" id="show-planes" checked> Planes (live)</label>
   </fieldset>
 </section>
 
-<footer class="status card"><span id="status">Burlington</span><span class="credit-short">Imagery © Google</span><span class="credit"><a class="by" href="https://morgz.org" target="_blank" rel="noopener">by morgz.org</a> · <a class="by tip-inline" href="#" target="_blank" rel="noopener" hidden>☕ Tip</a><span class="tip-sep" hidden> · </span>Imagery Google · Cesium ion · Built with Qwen · © OpenStreetMap contributors · Weather NWS · Buses GMT timetable · Flights adsb.lol (ODbL)</span></footer>
+<footer class="status card"><span id="status">Burlington</span><span class="credit-short">Imagery © Google</span><span class="credit"><a class="by" href="https://morgz.org" target="_blank" rel="noopener">by morgz.org</a> · <a class="by" href="./how.html">How it was made</a> · <a class="by tip-inline" href="#" target="_blank" rel="noopener" hidden>☕ Tip</a><span class="tip-sep" hidden> · </span>Imagery Google · Cesium ion · Built with Qwen · © OpenStreetMap contributors · Weather NWS · Buses GMT timetable · Flights adsb.lol (ODbL)</span></footer>
 <script type="module" src="./app.js"></script>
 </body>
 </html>
