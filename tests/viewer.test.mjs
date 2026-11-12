@@ -298,3 +298,39 @@ test('the How it was made page loads, links back, and is linked from the map', a
   assert.deepEqual(errors, []);
   await ctx.close();
 });
+
+test('places: dragging the map from a pin does not open it; the note takes and returns focus', async () => {
+  const { ctx, page, errors } = await open({ viewport: { width: 1400, height: 880 } });
+  const reqs = [];
+  page.on('request', r => { if (/labels\.json/.test(r.url())) reqs.push(r.url()); });
+  await page.reload(); await page.waitForFunction(() => window.__iso && window.__iso.places.list.length);
+  assert.equal(reqs.length, 1, 'labels.json is downloaded once');
+  await page.evaluate(() => { const p = window.__iso.places.list.find(p => p.name === 'Battery Park'); window.__iso.goTo(p.lat, p.lon, 'x'); });
+  await page.waitForTimeout(1500);
+  await page.evaluate(() => window.__iso.map.setZoom(-1, { animate: false }));
+  await page.waitForTimeout(300);
+  const pin = page.locator('.place-pin[aria-label^="Battery Park"] .place-mark');
+  const b = await pin.boundingBox();
+  await page.mouse.move(b.x + 6, b.y + 6); await page.mouse.down();
+  for (let k = 1; k <= 10; k++) await page.mouse.move(b.x + 6 + k * 20, b.y + 6 + k * 8);
+  await page.mouse.up();
+  await page.waitForTimeout(300);
+  assert.ok(await page.isHidden('#place'), 'a drag that starts on a pin only moves the map');
+  // keyboard: Enter on a pin opens its note, focus goes to the note and comes back on Escape
+  await page.focus('.place-pin[aria-label^="Battery Park"]');
+  await page.keyboard.press('Enter');
+  await page.waitForSelector('#place:not([hidden])');
+  assert.equal(await page.evaluate(() => document.activeElement.id), 'place-close');
+  await page.keyboard.press('Escape');
+  assert.equal(await page.evaluate(() => document.activeElement.closest('.place-pin')?.dataset.i != null), true);
+  // street names keep clear of the pins
+  const clash = await page.evaluate(() => {
+    const L = window.__iso.labels, boxes = L.reserved();
+    return L.placed.filter(p => boxes.some(b => p.x0 < b.x1 && p.x1 > b.x0 && p.y0 < b.y1 && p.y1 > b.y0)).length;
+  });
+  assert.equal(clash, 0);
+  const ev = await page.evaluate(() => window.__isoEvents.filter(e => e.event === 'place_opened').map(e => e.props.via));
+  assert.deepEqual(ev, ['pin']);
+  assert.deepEqual(errors, []);
+  await ctx.close();
+});

@@ -15,12 +15,14 @@ html,body{height:100%;margin:0;background:var(--ground);color:var(--ink);font:14
 .leaflet-container{background:transparent;font:inherit}
 .iso-tiles{image-rendering:auto}
 .leaflet-tile-pane{filter:brightness(calc(1 - var(--night)*.55)) saturate(calc(1 - var(--night)*.35));transition:filter .6s}
-#night{position:fixed;inset:0;pointer-events:none;background:#14234a;mix-blend-mode:multiply;opacity:calc(var(--night)*.55);transition:opacity .6s;z-index:401}
+#night{position:absolute;left:0;top:0;width:100vw;height:100vh;pointer-events:none;background:#14234a;mix-blend-mode:multiply;opacity:calc(var(--night)*.55);transition:opacity .6s;z-index:401}
 /* paper: a printed-map grain over the drawing. It fades in as you zoom past the drawing's own
    resolution, so enlarged pixels read as ink on paper rather than a blurry photo. --paper is 0..1, set from the zoom. */
-#paper{position:fixed;inset:0;pointer-events:none;z-index:401;mix-blend-mode:multiply;opacity:calc(.12 + var(--paper,0) * .55);
+#paper{position:absolute;left:0;top:0;width:100vw;height:100vh;pointer-events:none;mix-blend-mode:multiply;opacity:calc(.12 + var(--paper,0) * .55);
   background-image:url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='240' height='240'><filter id='n'><feTurbulence type='fractalNoise' baseFrequency='.85' numOctaves='3' stitchTiles='stitch'/><feColorMatrix values='0 0 0 0 .42  0 0 0 0 .36  0 0 0 0 .28  0 0 0 -1.1 .95'/></filter><rect width='100%' height='100%' filter='url(%23n)'/></svg>"),url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='520' height='520'><filter id='f'><feTurbulence type='fractalNoise' baseFrequency='.012 .09' numOctaves='2' seed='7' stitchTiles='stitch'/><feColorMatrix values='0 0 0 0 .55  0 0 0 0 .47  0 0 0 0 .36  0 0 0 -1.6 1.05'/></filter><rect width='100%' height='100%' filter='url(%23f)'/></svg>");background-size:240px 240px,520px 520px;transition:opacity .4s}
-#labels{position:fixed;inset:0;width:100%;height:100%;pointer-events:none;z-index:401}
+#labels{position:absolute;left:0;top:0;width:100vw;height:100vh;pointer-events:none}
+.leaflet-tint-pane{pointer-events:none;mix-blend-mode:multiply}
+.leaflet-ink-pane{pointer-events:none}
 #buses,#planes{position:fixed;inset:0;width:100%;height:100%;pointer-events:none;z-index:401}
 #bus-tip{position:fixed;display:flex;gap:9px;align-items:flex-start;padding:8px 11px;font-size:12.5px;pointer-events:none;max-width:240px}
 #bus-tip .sw{width:10px;height:10px;border-radius:3px;margin-top:4px;flex:none}
@@ -117,6 +119,8 @@ legend{font:600 11px var(--mono);letter-spacing:.08em;text-transform:uppercase;c
 .places-list button:hover,.places-list button:focus-visible{background:var(--line);outline:none}
 .sr{position:absolute;width:1px;height:1px;overflow:hidden;clip:rect(0 0 0 0)}
 
+/* landscape phones: the control column is taller than the screen without the compass */
+@media (max-height:480px){.compass{display:none}.controls{grid-template-columns:auto auto;align-items:end}}
 @media (max-width:640px){
   .brand{right:calc(12px + var(--safe-r));padding:8px 12px}
   .brand-title{font-size:17px}

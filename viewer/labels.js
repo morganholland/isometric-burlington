@@ -25,6 +25,8 @@ export class LabelLayer {
     Object.assign(this, { c: canvas, ctx: canvas.getContext('2d'), map, toLL, getAngle, inRegion });
     this.data = null; this.on = true; this.night = 0; this.zooming = false; this.pending = false;
     this.widths = new Map();
+    this.reserved = () => [];          // screen boxes other things (place pins) already hold
+    this.skip = new Set();             // area names shown some other way (a place pin of the same name)
     this.resize(); addEventListener('resize', () => { this.resize(); this.draw(); });
     map.on('zoomstart', () => { this.zooming = true; this.clear(); });
     map.on('zoomend', () => { this.zooming = false; this.draw(); });
@@ -36,10 +38,7 @@ export class LabelLayer {
     const d = Math.min(devicePixelRatio || 1, 2);
     this.dpr = d; this.c.width = innerWidth * d; this.c.height = innerHeight * d;
   }
-  async load(url) {
-    const r = await fetch(url);
-    if (!r.ok) throw new Error(`labels ${r.status}`);
-    const d = await r.json();
+  use(d) {
     // map pixels for all four views, worked out once
     const proj = pts => [0, 1, 2, 3].map(a => pts.map(([la, lo, h]) => latLonToPx(a, la, lo, h)));
     this.streets = d.streets.map(([name, rank, pts, hidden], id) => {
@@ -49,9 +48,16 @@ export class LabelLayer {
     });
     // longer, more important streets get first claim on the space
     this.streets.sort((a, b) => a.rank - b.rank || b.px[0].length - a.px[0].length || a.id - b.id);
-    this.areas = [...d.areas, LAKE].map(([name, kind, la, lo, h]) => ({ name, kind, px: [0, 1, 2, 3].map(a => latLonToPx(a, la, lo, h)) }));
+    this.areas = [...d.areas, LAKE].filter(([name]) => !this.skip.has(name)).map(([name, kind, la, lo, h]) => ({ name, kind, px: [0, 1, 2, 3].map(a => latLonToPx(a, la, lo, h)) }));
     this.data = d;
     this.draw();
+  }
+  // the canvas lives in a map pane (under the place pins), which Leaflet moves while dragging: keep it
+  // pinned to the screen
+  pin() {
+    if (!this.map._loaded) return;
+    const p = this.map.containerPointToLayerPoint([0, 0]);
+    this.c.style.transform = `translate3d(${p.x}px,${p.y}px,0)`;
   }
   clear() { this.ctx.setTransform(1, 0, 0, 1, 0, 0); this.ctx.clearRect(0, 0, this.c.width, this.c.height); }
   draw() {
@@ -68,6 +74,8 @@ export class LabelLayer {
     this.clear();
     this.placed = []; this.shown = []; this.spots = [];
     if (!this.on || !this.data || !this.map._loaded || this.zooming) return;
+    this.pin();
+    this.reserved_ = this.reserved();
     const { ctx, map } = this;
     const z = map.getZoom(), s = 2 ** z, a = this.getAngle();
     const o = map.latLngToContainerPoint(this.toLL(0, 0));
@@ -144,6 +152,7 @@ export class LabelLayer {
     return this.spots.filter(p => covered(p.st.hidden[p.a], p.cum, p.d0, p.d1)).map(p => p.st.name);
   }
   hits(b) {
+    for (const p of this.reserved_ || []) if (b.x0 < p.x1 && b.x1 > p.x0 && b.y0 < p.y1 && b.y1 > p.y0) return true;
     for (const p of this.placed) if (b.x0 < p.x1 && b.x1 > p.x0 && b.y0 < p.y1 && b.y1 > p.y0) return true;
     return false;
   }

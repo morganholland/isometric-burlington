@@ -29,6 +29,19 @@ const map = L.map('map', {
   maxBoundsViscosity: 0.8,
 });
 
+// the paper grain and night tint sit just over the drawing, the names above them, and the place pins
+// (Leaflet's marker pane, 600) on top of all three
+map.createPane('tint').style.zIndex = 250;
+map.createPane('ink').style.zIndex = 450;
+map.getPane('tint').append($('#paper'), $('#night'));
+map.getPane('ink').append($('#labels'));
+// Leaflet moves its panes while dragging; keep the tint fixed to the screen
+function pinTint() {
+  const p = map.containerPointToLayerPoint([0, 0]);
+  map.getPane('tint').style.transform = `translate3d(${p.x}px,${p.y}px,0)`;
+}
+map.on('move zoomend viewreset resize', pinTint);
+
 function angleBounds(a) {
   const g = grid.angles[a];
   return L.latLngBounds(toLL(g.x0, g.y1), toLL(g.x1, g.y0));
@@ -143,37 +156,52 @@ function goTo(lat, lon, label) {
 }
 
 // ---------- hand-picked places: a pin and a short note each ----------
-const places = { list: [], markers: [], open: null };
+const places = { list: [], markers: [], open: null, opener: null };
+const esc = t => t.replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' })[c]);
 function drawPlaces() {
+  const focused = document.activeElement?.closest?.('.place-pin')?.dataset.i;
   for (const m of places.markers) map.removeLayer(m);
   places.markers = [];
-  if (!$('#show-places').checked) return;
-  places.list.forEach((p, i) => {
+  if ($('#show-places').checked) places.list.forEach((p, i) => {
     const [x, y] = latLonToPx(state.angle, p.lat, p.lon, p.h);
     if (!inRegion(state.angle, x, y)) return;
-    const esc = t => t.replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' })[c]);
     const icon = L.divIcon({ className: 'place', iconSize: [0, 0],
       html: `<button type="button" class="place-pin" data-i="${i}" aria-label="${esc(p.name)}: read the note"><span class="place-mark"></span><span class="place-name">${esc(p.name)}</span></button>` });
     const m = L.marker(toLL(x, y), { icon, keyboard: false, zIndexOffset: 500 }).addTo(map);
+    // Leaflet's own click: it is not fired when the press turns out to be a drag of the map
+    m.on('click', () => openPlace(i, 'pin', m.getElement()?.querySelector('button')));
+    m.placeIndex = i;
     places.markers.push(m);
   });
   zoomBand();
+  // turning the map rebuilds the pins: keep keyboard focus on the same one
+  if (focused != null) document.querySelector(`.place-pin[data-i="${focused}"]`)?.focus();
+  labels.draw();
 }
-function openPlace(i, via) {
+function openPlace(i, via, opener) {
   const p = places.list[i];
   places.open = i;
+  places.opener = opener || null;
   $('#place h2').textContent = p.name;
   $('#place p').textContent = p.note;
   $('#place').hidden = false;
-  $('#places-list').hidden = true; $('#places-btn').setAttribute('aria-expanded', 'false');
+  closePlacesList();
+  $('#place-close').focus();
   track('place_opened', { place: p.name, via });
 }
-function closePlace() { $('#place').hidden = true; places.open = null; }
+function closePlace() {
+  if ($('#place').hidden) return;
+  const i = places.open;
+  $('#place').hidden = true; places.open = null;
+  const back = places.opener?.isConnected ? places.opener : document.querySelector(`.place-pin[data-i="${i}"]`) || $('#places-btn');
+  back.focus();
+}
+function closePlacesList() { $('#places-list').hidden = true; $('#places-btn').setAttribute('aria-expanded', 'false'); }
 function flyToPlace(i) {
   const p = places.list[i];
   const [x, y] = latLonToPx(state.angle, p.lat, p.lon, p.h);
   map.flyTo(toLL(x, y), Math.max(map.getZoom(), -0.5), { duration: 1.1 });
-  openPlace(i, 'list');
+  openPlace(i, 'list', null);
 }
 // pins show from the overview in; their names once you are close enough to read the streets
 function zoomBand() {
@@ -182,8 +210,17 @@ function zoomBand() {
   $('#map').classList.toggle('places-named', z >= -1.25);
 }
 map.on('zoomend', zoomBand);
-fetch('labels.json').then(r => r.ok ? r.json() : null).then(d => {
-  if (!d?.places) return;
+// the screen space pins (and their names) take, so street names keep clear of them
+function placeBoxes() {
+  if ($('#map').classList.contains('places-far')) return [];
+  const named = $('#map').classList.contains('places-named');
+  return places.markers.map(m => {
+    const c = map.latLngToContainerPoint(m.getLatLng());
+    const w = named ? 30 + places.list[m.placeIndex].name.length * 7.4 : 20;
+    return { x0: c.x - 11, x1: c.x - 11 + w, y0: c.y - 12, y1: c.y + 12 };
+  });
+}
+function setupPlaces(d) {
   places.list = d.places.map(([name, note, lat, lon, h]) => ({ name, note, lat, lon, h }));
   const ul = $('#places-list ul');
   places.list.forEach((p, i) => {
@@ -193,13 +230,17 @@ fetch('labels.json').then(r => r.ok ? r.json() : null).then(d => {
   });
   $('#places-btn').hidden = false;
   drawPlaces();
-}).catch(() => {});
+}
 $('#place-close').addEventListener('click', closePlace);
-$('#map').addEventListener('click', e => { const b = e.target.closest('.place-pin'); if (b) { e.stopPropagation(); openPlace(+b.dataset.i, 'pin'); } });
+// keyboard: Enter or Space on a focused pin (Leaflet only passes on pointer clicks)
+$('#map').addEventListener('keydown', e => {
+  const b = e.target.closest?.('.place-pin');
+  if (b && (e.key === 'Enter' || e.key === ' ')) { e.preventDefault(); e.stopPropagation(); openPlace(+b.dataset.i, 'pin', b); }
+});
 $('#show-places').addEventListener('change', drawPlaces);
 $('#places-btn').addEventListener('click', () => {
   const l = $('#places-list'); l.hidden = !l.hidden; $('#places-btn').setAttribute('aria-expanded', String(!l.hidden));
-  if (!l.hidden) { $('#layers').hidden = true; $('#layers-btn').setAttribute('aria-expanded', 'false'); }
+  if (!l.hidden) { $('#layers').hidden = true; $('#layers-btn').setAttribute('aria-expanded', 'false'); l.querySelector('button')?.focus(); }
 });
 
 // ---------- sky: night + weather ----------
@@ -217,7 +258,13 @@ function inRegion(a, x, y) {
   return inside;
 }
 const labels = new LabelLayer($('#labels'), map, toLL, () => state.angle, (x, y) => inRegion(state.angle, x, y));
-labels.load('labels.json').catch(() => { labels.data = null; });
+labels.reserved = placeBoxes;
+// one download feeds the names and the places
+fetch('labels.json').then(r => r.ok ? r.json() : Promise.reject(new Error(`labels ${r.status}`))).then(d => {
+  labels.skip = new Set((d.places || []).map(p => p[0]));
+  labels.use(d);
+  if (d.places) setupPlaces(d);
+}).catch(() => { labels.data = null; });
 const buses = new BusLayer($('#buses'), map, toLL, () => state.angle, (x, y) => inRegion(state.angle, x, y));
 buses.load('transit.json').catch(() => { buses.data = null; });
 const planes = new PlaneLayer($('#planes'), map, toLL, () => state.angle);
@@ -315,6 +362,7 @@ $('#about-close').addEventListener('click', () => { showAbout(false); $('#about-
 addEventListener('keydown', e => {
   if (e.key === 'Escape' && !$('#about').hidden) { showAbout(false); $('#about-btn').focus(); return; }
   if (e.key === 'Escape' && !$('#place').hidden) { closePlace(); return; }
+  if (e.key === 'Escape' && !$('#places-list').hidden) { closePlacesList(); $('#places-btn').focus(); return; }
   if (e.target.matches('input[type=search], input[type=text], textarea')) return;
   if (e.key === '?') { showAbout($('#about').hidden); return; }
   if (e.key === 'r' || e.key === ']') rotate(1);

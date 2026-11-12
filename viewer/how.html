@@ -57,5 +57,11 @@
   <p>If the map gets your block badly wrong, or there's a place that deserves a note, I'd like to hear it. The longer story of building this is on my blog, <a href="https://morgz.org" target="_blank" rel="noopener">morgz.org</a>.</p>
   <p><a class="cta" href="./">Open the map</a></p>
 </main>
+<script>
+  // back to the map where you left it (its position is in the map page's address), when you came from it
+  for (const a of document.querySelectorAll('a[href="./"]')) a.addEventListener('click', e => {
+    try { if (document.referrer && new URL(document.referrer).origin === location.origin && history.length > 1) { e.preventDefault(); history.back(); } } catch {}
+  });
+</script>
 </body>
 </html>
