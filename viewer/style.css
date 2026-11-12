@@ -15,7 +15,14 @@ html,body{height:100%;margin:0;background:var(--ground);color:var(--ink);font:14
 .leaflet-container{background:transparent;font:inherit}
 .iso-tiles{image-rendering:auto}
 .leaflet-tile-pane{filter:brightness(calc(1 - var(--night)*.55)) saturate(calc(1 - var(--night)*.35));transition:filter .6s}
-#night{position:fixed;inset:0;pointer-events:none;background:#14234a;mix-blend-mode:multiply;opacity:calc(var(--night)*.55);transition:opacity .6s;z-index:401}
+#night{position:absolute;left:0;top:0;width:100vw;height:100vh;pointer-events:none;background:#14234a;mix-blend-mode:multiply;opacity:calc(var(--night)*.55);transition:opacity .6s;z-index:401}
+/* paper: a printed-map grain over the drawing. It fades in as you zoom past the drawing's own
+   resolution, so enlarged pixels read as ink on paper rather than a blurry photo. --paper is 0..1, set from the zoom. */
+#paper{position:absolute;left:0;top:0;width:100vw;height:100vh;pointer-events:none;mix-blend-mode:multiply;opacity:calc(.12 + var(--paper,0) * .55);
+  background-image:url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='240' height='240'><filter id='n'><feTurbulence type='fractalNoise' baseFrequency='.85' numOctaves='3' stitchTiles='stitch'/><feColorMatrix values='0 0 0 0 .42  0 0 0 0 .36  0 0 0 0 .28  0 0 0 -1.1 .95'/></filter><rect width='100%' height='100%' filter='url(%23n)'/></svg>"),url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='520' height='520'><filter id='f'><feTurbulence type='fractalNoise' baseFrequency='.012 .09' numOctaves='2' seed='7' stitchTiles='stitch'/><feColorMatrix values='0 0 0 0 .55  0 0 0 0 .47  0 0 0 0 .36  0 0 0 -1.6 1.05'/></filter><rect width='100%' height='100%' filter='url(%23f)'/></svg>");background-size:240px 240px,520px 520px;transition:opacity .4s}
+#labels{position:absolute;left:0;top:0;width:100vw;height:100vh;pointer-events:none}
+.leaflet-tint-pane{pointer-events:none;mix-blend-mode:multiply}
+.leaflet-ink-pane{pointer-events:none}
 #buses,#planes{position:fixed;inset:0;width:100%;height:100%;pointer-events:none;z-index:401}
 #bus-tip{position:fixed;display:flex;gap:9px;align-items:flex-start;padding:8px 11px;font-size:12.5px;pointer-events:none;max-width:240px}
 #bus-tip .sw{width:10px;height:10px;border-radius:3px;margin-top:4px;flex:none}
@@ -91,8 +98,29 @@ legend{font:600 11px var(--mono);letter-spacing:.08em;text-transform:uppercase;c
 .pin-label{position:absolute;left:12px;top:-12px;white-space:nowrap;background:var(--card);border:1px solid var(--line);padding:3px 8px;border-radius:6px;font:600 12.5px var(--body);color:var(--ink)}
 @keyframes pulse{50%{box-shadow:0 0 0 9px rgba(184,70,45,0)}}
 @media (prefers-reduced-motion:reduce){.pin-dot{animation:none}}
+/* hand-picked places: an ink diamond on the map, its name once you're close */
+.place{position:relative}
+.place-pin{position:absolute;left:-9px;top:-9px;display:flex;align-items:center;gap:6px;border:0;background:none;padding:0;cursor:pointer;font:inherit;color:var(--ink)}
+.place-mark{flex:none;width:12px;height:12px;margin:3px;background:#f6efd9;border:2px solid #2a1d17;transform:rotate(45deg);border-radius:2px;box-shadow:0 1px 3px rgba(0,0,0,.35)}
+.place-mark::after{content:"";display:block;width:4px;height:4px;margin:4px;background:var(--accent);border-radius:1px}
+.place-name{display:none;white-space:nowrap;font:600 12.5px/1 var(--body);color:#2a1d17;background:rgba(250,246,236,.92);border:1px solid rgba(42,29,23,.35);padding:3px 7px;border-radius:5px;box-shadow:0 1px 4px rgba(0,0,0,.2)}
+.places-named .place-name{display:inline-block}
+.places-far .place{display:none}
+.place-pin:hover .place-name,.place-pin:focus-visible .place-name{display:inline-block}
+.place-pin:hover .place-mark{background:#fff}
+.place-pin:focus-visible{outline:2px solid var(--accent);outline-offset:3px;border-radius:6px}
+.place-card{box-sizing:border-box;position:fixed;left:calc(12px + var(--safe-l));bottom:calc(48px + var(--safe-b));width:min(340px,calc(100vw - 88px - var(--safe-l) - var(--safe-r)));padding:14px 16px 12px;z-index:550}
+.place-card h2{font:700 17px/1.2 var(--display);margin:0 30px 6px 0}
+.place-card p{margin:0;font-size:13.5px}
+.places-list{padding:10px 8px 8px;max-height:min(60vh,calc(100% - 200px));overflow:auto;min-width:220px}
+.places-list h2{font:600 11px var(--mono);letter-spacing:.08em;text-transform:uppercase;color:var(--muted);margin:2px 8px 6px}
+.places-list ul{list-style:none;margin:0;padding:0}
+.places-list button{width:100%;text-align:left;border:0;background:transparent;color:var(--ink);font:14px var(--body);padding:6px 8px;border-radius:6px;cursor:pointer}
+.places-list button:hover,.places-list button:focus-visible{background:var(--line);outline:none}
 .sr{position:absolute;width:1px;height:1px;overflow:hidden;clip:rect(0 0 0 0)}
 
+/* landscape phones: the control column is taller than the screen without the compass */
+@media (max-height:480px){.compass{display:none}.controls{grid-template-columns:auto auto;align-items:end}}
 @media (max-width:640px){
   .brand{right:calc(12px + var(--safe-r));padding:8px 12px}
   .brand-title{font-size:17px}

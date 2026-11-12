@@ -210,3 +210,127 @@ test('analytics: records turns, guide opens and tips, and stays silent off the l
   assert.deepEqual(errors, []);
   await ctx.close();
 });
+
+test('zoomed in: street names are drawn crisp, on the streets, and out of the way of buildings', async () => {
+  const { ctx, page, errors } = await open({ viewport: { width: 1400, height: 880 } });
+  await page.waitForFunction(() => window.__iso.labels.data);
+  // downtown at the drawing's own size (zoom 0)
+  await page.evaluate(() => { window.__iso.goTo(44.4766, -73.2125, 'Downtown'); });
+  await page.waitForTimeout(1500);
+  await page.evaluate(() => window.__iso.map.setZoom(0, { animate: false }));
+  await page.waitForFunction(() => window.__iso.labels.placed && window.__iso.labels.placed.length >= 3, null, { timeout: 5000 });
+  const names = await page.evaluate(() => window.__iso.labels.shown);
+  assert.ok(names.includes('Main Street'), `Main Street labelled (${names})`);
+  // the canvas is drawn at the screen's real pixel density
+  assert.equal(await page.evaluate(() => document.querySelector('#labels').width), 1400 * (await page.evaluate(() => Math.min(devicePixelRatio, 2))));
+  // never on a stretch a building stands in front of
+  const bad = await page.evaluate(() => window.__iso.labels.audit());
+  assert.deepEqual(bad, []);
+  if (SHOTS) await page.screenshot({ path: `${SHOTS}/desktop-labels.png` });
+  // zoomed out to the whole city: neighbourhoods and the lake instead of side streets
+  await page.evaluate(() => window.__iso.map.setZoom(-4.5, { animate: false }));
+  await page.waitForTimeout(300);
+  const far = await page.evaluate(() => window.__iso.labels.shown);
+  assert.ok(far.includes('DOWNTOWN') && far.includes('Lake Champlain'), `overview names (${far})`);
+  assert.ok(!far.includes('Orchard Terrace'), 'no side streets from far away');
+  // the paper grain grows as you zoom past the drawing's resolution
+  const paper = () => page.evaluate(() => +getComputedStyle(document.documentElement).getPropertyValue('--paper'));
+  assert.equal(await paper(), 0);
+  await page.evaluate(() => window.__iso.map.setZoom(2, { animate: false }));
+  await page.waitForTimeout(100);
+  assert.equal(await paper(), 1);
+  // names can be switched off
+  await page.click('#layers-btn');
+  await page.uncheck('#show-labels');
+  await page.waitForTimeout(100);
+  assert.equal(await page.evaluate(() => window.__iso.labels.placed.length), 0);
+  assert.deepEqual(errors, []);
+  await ctx.close();
+});
+
+test('places worth a look: pins and the ★ list open a note, and turn with the map', async () => {
+  const { ctx, page, errors } = await open({ viewport: { width: 1400, height: 880 } });
+  await page.waitForFunction(() => window.__iso.places.list.length >= 10);
+  await page.click('#places-btn');
+  await page.waitForSelector('#places-list:not([hidden])');
+  const items = await page.locator('#places-list button').allTextContents();
+  assert.ok(items.includes('Battery Park'), items.join(', '));
+  await page.click('#places-list button:text("Battery Park")');
+  await page.waitForSelector('#place:not([hidden])');
+  assert.equal(await page.textContent('#place h2'), 'Battery Park');
+  assert.match(await page.textContent('#place p'), /1812/);
+  assert.ok(await page.isHidden('#places-list'), 'the list closes when a place opens');
+  await page.waitForTimeout(1500);
+  const pin = page.locator('.place-pin[aria-label^="Battery Park"]');
+  const b = await pin.boundingBox();
+  assert.ok(b && Math.abs(b.x - 700) < 120 && Math.abs(b.y - 440) < 120, `the map flies to the pin (${JSON.stringify(b)})`);
+  await page.keyboard.press('Escape');
+  assert.ok(await page.isHidden('#place'));
+  // a pin itself opens its note
+  await pin.click();
+  await page.waitForSelector('#place:not([hidden])');
+  assert.equal(await page.textContent('#place h2'), 'Battery Park');
+  await page.click('#place-close');
+  // turning the map moves the pins with it
+  await page.click('#rot-right');
+  assert.ok(await page.locator('.place-pin[aria-label^="Battery Park"]').count() === 1);
+  const ev = await page.evaluate(() => window.__isoEvents.filter(e => e.event === 'place_opened').map(e => e.props.via));
+  assert.deepEqual(ev, ['list', 'pin']);
+  assert.deepEqual(errors, []);
+  await ctx.close();
+});
+
+test('the How it was made page loads, links back, and is linked from the map', async () => {
+  const { ctx, page, errors } = await open({ viewport: { width: 1400, height: 880 } });
+  assert.equal(await page.locator('.status .credit a[href="./how.html"]').count(), 1);
+  await page.click('#about-btn');
+  await page.click('#about a[href="./how.html"]');
+  await page.waitForURL(/how\.html$/);
+  assert.match(await page.textContent('h1'), /How it was made/);
+  assert.match(await page.textContent('main'), /melt/);
+  const overflow = await page.evaluate(() => document.documentElement.scrollWidth > innerWidth);
+  assert.equal(overflow, false);
+  await page.setViewportSize({ width: 390, height: 844 });
+  assert.equal(await page.evaluate(() => document.documentElement.scrollWidth > innerWidth), false, 'fits a phone');
+  if (SHOTS) await page.screenshot({ path: `${SHOTS}/how-phone.png`, fullPage: true });
+  await page.click('a.back');
+  await page.waitForFunction(() => window.__iso);
+  assert.deepEqual(errors, []);
+  await ctx.close();
+});
+
+test('places: dragging the map from a pin does not open it; the note takes and returns focus', async () => {
+  const { ctx, page, errors } = await open({ viewport: { width: 1400, height: 880 } });
+  const reqs = [];
+  page.on('request', r => { if (/labels\.json/.test(r.url())) reqs.push(r.url()); });
+  await page.reload(); await page.waitForFunction(() => window.__iso && window.__iso.places.list.length);
+  assert.equal(reqs.length, 1, 'labels.json is downloaded once');
+  await page.evaluate(() => { const p = window.__iso.places.list.find(p => p.name === 'Battery Park'); window.__iso.goTo(p.lat, p.lon, 'x'); });
+  await page.waitForTimeout(1500);
+  await page.evaluate(() => window.__iso.map.setZoom(-1, { animate: false }));
+  await page.waitForTimeout(300);
+  const pin = page.locator('.place-pin[aria-label^="Battery Park"] .place-mark');
+  const b = await pin.boundingBox();
+  await page.mouse.move(b.x + 6, b.y + 6); await page.mouse.down();
+  for (let k = 1; k <= 10; k++) await page.mouse.move(b.x + 6 + k * 20, b.y + 6 + k * 8);
+  await page.mouse.up();
+  await page.waitForTimeout(300);
+  assert.ok(await page.isHidden('#place'), 'a drag that starts on a pin only moves the map');
+  // keyboard: Enter on a pin opens its note, focus goes to the note and comes back on Escape
+  await page.focus('.place-pin[aria-label^="Battery Park"]');
+  await page.keyboard.press('Enter');
+  await page.waitForSelector('#place:not([hidden])');
+  assert.equal(await page.evaluate(() => document.activeElement.id), 'place-close');
+  await page.keyboard.press('Escape');
+  assert.equal(await page.evaluate(() => document.activeElement.closest('.place-pin')?.dataset.i != null), true);
+  // street names keep clear of the pins
+  const clash = await page.evaluate(() => {
+    const L = window.__iso.labels, boxes = L.reserved();
+    return L.placed.filter(p => boxes.some(b => p.x0 < b.x1 && p.x1 > b.x0 && p.y0 < b.y1 && p.y1 > b.y0)).length;
+  });
+  assert.equal(clash, 0);
+  const ev = await page.evaluate(() => window.__isoEvents.filter(e => e.event === 'place_opened').map(e => e.props.via));
+  assert.deepEqual(ev, ['pin']);
+  assert.deepEqual(errors, []);
+  await ctx.close();
+});
