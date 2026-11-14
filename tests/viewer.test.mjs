@@ -462,3 +462,31 @@ test('share copies a link that opens the same view, night included; snapshot sav
   assert.deepEqual(errors, []);
   await ctx.close();
 });
+
+test('the map still works when the street and lights files cannot be had; a picture with no map in it is not saved', async () => {
+  const ctx = await browser.newContext({ viewport: { width: 1400, height: 880 } });
+  const page = await ctx.newPage();
+  const errors = [];
+  page.on('pageerror', e => errors.push(e.message));
+  await page.route('**/api/flights', r => r.fulfill({ json: { now: Date.now(), ac: [] } }));
+  await page.route(/(streets|lights)\.json/, r => r.fulfill({ status: 404, body: 'gone' }));
+  await page.goto(URL0);
+  await page.waitForFunction(() => window.__iso && window.__iso.map._loaded);
+  await page.evaluate(() => window.__iso.goTo(44.4766, -73.2125, 'Downtown'));
+  await page.click('#layers-btn');
+  await page.check('input[name=time][value=night]');
+  await page.click('#layers-btn');
+  await page.waitForTimeout(1500);
+  assert.equal(await page.evaluate(() => getComputedStyle(document.documentElement).getPropertyValue('--night').trim()), '1.000');
+  await page.click('#rot-right');
+  await page.waitForFunction(() => window.__iso.state.angle === 1);
+  // a tile that cannot be fetched: no picture rather than an empty one
+  const r = await page.evaluate(async () => {
+    const { snapshot } = window.__iso;
+    const s = await snapshot({ width: 300, height: 200, night: 0, caption: 'x', layers: [], tileUrl: u => u, tiles: [{ src: 'nope/1.webp', x: 0, y: 0, w: 300, h: 200 }] });
+    return { drawn: s.drawn, asked: s.asked };
+  });
+  assert.deepEqual(r, { drawn: 0, asked: 1 });
+  assert.deepEqual(errors, []);
+  await ctx.close();
+});

@@ -4,6 +4,9 @@
     { "source": "/(.*)", "has": [{ "type": "host", "value": "isometric-burlington-morgans-projects-68702133.vercel.app" }], "destination": "https://isoburlington.com/$1", "permanent": true }
   ],
   "rewrites": [
-    { "source": "/tiles/:path*", "destination": "https://pub-9c551c98dab048f484c2c7e896e92cc0.r2.dev/:path*" }
+    { "source": "/tiles/:kind([a-z0-9_-]+)/:angle(a[0-3])/:z(-?\\d+)/:x(-?\\d+)/:file(-?\\d+\\.webp)", "destination": "https://pub-9c551c98dab048f484c2c7e896e92cc0.r2.dev/:kind/:angle/:z/:x/:file" }
+  ],
+  "headers": [
+    { "source": "/tiles/(.*)", "headers": [{ "key": "Cache-Control", "value": "public, max-age=86400, s-maxage=604800" }] }
   ]
 }

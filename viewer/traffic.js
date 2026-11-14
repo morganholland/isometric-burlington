@@ -141,10 +141,12 @@ export class Traffic {
   // move every car on by dt seconds; t is the time (seconds) the lights run on, level how busy it is
   step(dt, t, level) {
     const { g } = this;
+    this.tick = (this.tick || 0) + 1;
     for (const l of this.live) {
       let lead = null;
       for (let i = 0; i < l.cars.length; i++) {
         const c = l.cars[i];
+        if (c.at === this.tick) { lead = c; continue; }      // turned onto this street a moment ago: already moved
         const toEnd = l.len - c.s;
         let room, want = SPEED[l.cls] * c.k;
         if (lead) room = lead.s - lead.len - GAP - c.s;
@@ -176,7 +178,7 @@ export class Traffic {
             l.cars.splice(i, 0, c); i++; c.s = l.len; c.v = 0; lead = c;
             continue;
           }
-          c.s = s; c.lane = nl; c.next = undefined; nl.cars.push(c);
+          c.s = s; c.lane = nl; c.next = undefined; c.at = this.tick; nl.cars.push(c);
           continue;
         }
         lead = c;
@@ -247,7 +249,7 @@ export class CarLayer {
       if (!r.ok) throw new Error(`streets ${r.status}`);
       this.sim = new Traffic(buildGraph(await r.json()));
       this.aim();
-    } catch { /* no streets, no cars */ }
+    } catch { setTimeout(() => { this.loading = false; }, 60000); /* no streets, no cars; ask again in a minute */ }
   }
   frame(t) {
     requestAnimationFrame(tt => this.frame(tt));

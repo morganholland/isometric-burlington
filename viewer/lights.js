@@ -79,7 +79,7 @@ export class LightLayer {
     map.on('zoomstart', () => { this.zooming = true; this.clear(); });
     map.on('zoomend', () => { this.zooming = false; this.draw(); });
     map.on('move viewreset', () => this.draw());
-    setInterval(() => { if (this.night > 0.05 && this.data?.beacons.n) this.draw(); }, 500);
+    setInterval(() => { if (this.night > 0.05 && this.blinking) this.draw(); }, 500);
   }
   resize() {
     const d = Math.min(devicePixelRatio || 1, 2);
@@ -101,7 +101,7 @@ export class LightLayer {
       const d = await r.json();
       this.data = Object.fromEntries(['lamps', 'windows', 'field', 'beacons'].map(k => [k, new Points(d[k] || [], d.origin)]));
       this.draw();
-    } catch { /* a dark night, then */ }
+    } catch { setTimeout(() => { this.loading = false; }, 60000); /* a dark night, then; ask again in a minute */ }
   }
   pin() {
     const p = this.map.containerPointToLayerPoint([0, 0]);
@@ -116,6 +116,7 @@ export class LightLayer {
   render(ctx = this.ctx, now = Date.now()) {
     if (ctx === this.ctx) this.clear();
     this.count = { lamps: 0, windows: 0, field: 0, beacons: 0 };
+    this.blinking = false;                                 // is a blinking light in view? only then redraw on a timer
     if (!this.data || this.night <= 0.05 || !this.map._loaded || this.zooming) return;
     if (ctx === this.ctx) { this.pin(); ctx.setTransform(this.dpr, 0, 0, this.dpr, 0, 0); }
     const { map, data, count } = this;
@@ -165,6 +166,7 @@ export class LightLayer {
       dot(o.x + x * s, o.y + y * s, Math.max(1.3, 0.5 * scale), data.field.flag[i] ? '#6f9bff' : '#fff6dc', 1);
     });
     data.beacons.each(a, v0, v1, (i, x, y) => {
+      this.blinking = true;
       const kind = data.beacons.flag[i], t = now / 1000 + i * 1.7;
       const flash = kind === 3 ? true : kind === 0 ? t % 4 < 1.2 : t % 2.5 < 1.25;
       if (!flash) return;

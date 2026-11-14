@@ -358,10 +358,10 @@ function tilesOnScreen() {
 let snapping = false;
 async function takeSnapshot() {
   if (snapping) return null;
-  snapping = true; $('#snap-btn').setAttribute('aria-busy', 'true');
+  snapping = true; $('#snap-btn').setAttribute('aria-busy', 'true'); $('#snap-btn').disabled = true;
   try {
     const night = +getComputedStyle(document.documentElement).getPropertyValue('--night') || 0;
-    const { blob, drawn } = await snapshot({
+    const { blob, drawn, asked } = await snapshot({
       width: innerWidth, height: innerHeight, night, caption: 'isoburlington.com',
       tiles: tilesOnScreen(), tileUrl: src => (TILE_BASE && src.startsWith(TILE_BASE) ? 'tiles' + src.slice(TILE_BASE.length) : src),
       layers: [
@@ -369,7 +369,7 @@ async function takeSnapshot() {
         { canvas: $('#labels') }, { canvas: $('#cars') }, { canvas: $('#buses') }, { canvas: $('#planes') }, { canvas: $('#fx') },
       ],
     });
-    if (!blob) throw new Error('no picture');
+    if (!blob || (asked && !drawn)) throw new Error('no picture');   // never save a picture with no map in it
     const how = await deliver(blob, `isometric-burlington-${new Date().toISOString().slice(0, 10)}.jpg`);
     track('snapshot_saved', { how, tiles: drawn });
     if (how === 'saved') toast('Picture saved');
@@ -377,7 +377,7 @@ async function takeSnapshot() {
   } catch {
     toast('Could not make a picture this time');
     return null;
-  } finally { snapping = false; $('#snap-btn').removeAttribute('aria-busy'); }
+  } finally { snapping = false; $('#snap-btn').removeAttribute('aria-busy'); $('#snap-btn').disabled = false; }
 }
 $('#snap-btn').addEventListener('click', takeSnapshot);
 
@@ -453,5 +453,5 @@ async function loadManifest() {
   refreshWeather();
   const st = sunTimes();
   $('#sun').textContent = `Sunset ${st.sunset.toLocaleTimeString('en-US', { timeZone: 'America/New_York', hour: 'numeric', minute: '2-digit' })}`;
-  window.__iso = { map, state, rotate, goTo, toPx, buses, planes, cars, lights, labels, places, openPlace, showAbout, takeSnapshot };
+  window.__iso = { map, state, rotate, goTo, toPx, buses, planes, cars, lights, labels, places, openPlace, showAbout, takeSnapshot, snapshot };
 })();

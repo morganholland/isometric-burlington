@@ -45,15 +45,15 @@ export async function snapshot({ width, height, tiles, tileUrl, night, layers, c
   const bg = ctx.createRadialGradient(width / 2, height * 0.4, 0, width / 2, height * 0.4, Math.max(width, height) * 0.9);
   bg.addColorStop(0, '#3c5a6c'); bg.addColorStop(1, '#1d2c36');
   ctx.fillStyle = bg; ctx.fillRect(0, 0, width, height);
-  let drawn = 0;
-  await Promise.all(tiles.map(async t => {
+  const bmps = await Promise.all(tiles.map(async t => {
     try {
       const r = await fetch(tileUrl(t.src));
-      if (!r.ok) return;
-      const bmp = await createImageBitmap(await r.blob());
-      ctx.drawImage(bmp, t.x, t.y, t.w, t.h); drawn++;
-    } catch { /* a missing tile leaves the background */ }
+      return r.ok ? await createImageBitmap(await r.blob()) : null;
+    } catch { return null; /* a missing tile leaves the background */ }
   }));
+  let drawn = 0;
+  tiles.map((t, i) => [t, bmps[i]]).filter(p => p[1]).sort((p, q) => q[0].w - p[0].w)     // coarser tiles underneath
+    .forEach(([t, bmp]) => { ctx.drawImage(bmp, t.x, t.y, t.w, t.h); drawn++; });
   if (night > 0.01) {
     // the same dimming the page does with CSS: darker, then a blue tint multiplied over
     ctx.globalCompositeOperation = 'multiply';
@@ -81,7 +81,7 @@ export async function snapshot({ width, height, tiles, tileUrl, night, layers, c
   ctx.fillStyle = '#f2f5f6'; ctx.textBaseline = 'middle';
   ctx.fillText(caption, bx + padX, by + bh / 2 + 0.5);
   const blob = await new Promise(res => c.toBlob(res, 'image/jpeg', 0.92));
-  return { blob, drawn };
+  return { blob, drawn, asked: tiles.length };
 }
 
 // Give the picture to the person: the share sheet on a phone, a download elsewhere.
