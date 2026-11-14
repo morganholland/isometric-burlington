@@ -26,7 +26,9 @@
 <div id="map" aria-label="Isometric map of Burlington, Vermont"></div>
 <div id="paper" aria-hidden="true"></div>
 <div id="night" aria-hidden="true"></div>
+<canvas id="lights" aria-hidden="true"></canvas>
 <canvas id="labels" aria-hidden="true"></canvas>
+<canvas id="cars" aria-hidden="true"></canvas>
 <canvas id="buses" aria-hidden="true"></canvas>
 <canvas id="planes" aria-hidden="true"></canvas>
 <div id="bus-tip" class="card" hidden><span class="sw"></span><div><b></b><div class="long"></div><div class="until"></div></div></div>
@@ -57,10 +59,16 @@
     <button id="zoom-in" type="button" aria-label="Zoom in">+</button>
     <button id="zoom-out" type="button" aria-label="Zoom out">−</button>
   </div>
+  <div class="card stack">
+    <button id="share-btn" type="button" title="Share this view" aria-label="Share a link to this view"><svg viewBox="0 0 16 16" aria-hidden="true"><path d="M8 10V2M4.5 5.5 8 2l3.5 3.5M3 8.5V14h10V8.5" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg></button>
+    <button id="snap-btn" type="button" title="Save a picture of this view" aria-label="Save a picture of this view"><svg viewBox="0 0 16 16" aria-hidden="true"><path d="M2 5h2.6l1-1.6h4.8l1 1.6H14v7.6H2Z" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linejoin="round"/><circle cx="8" cy="8.6" r="2.3" fill="none" stroke="currentColor" stroke-width="1.5"/></svg></button>
+  </div>
   <button id="places-btn" class="card single" type="button" aria-expanded="false" aria-controls="places-list" title="Places worth a look" hidden>★</button>
-  <button id="layers-btn" class="card single" type="button" aria-expanded="false" aria-controls="layers" title="Time, weather and buses">◐</button>
+  <button id="layers-btn" class="card single" type="button" aria-expanded="false" aria-controls="layers" title="Time, weather, cars and buses">◐</button>
   <button id="about-btn" class="card single" type="button" aria-expanded="false" aria-controls="about" title="How to use this map">?</button>
 </div>
+
+<div id="toast" class="card toast" role="status" aria-live="polite" hidden></div>
 
 <div id="hint" class="card hint" role="note" hidden>
   <span class="hint-text"><b>Drag</b> to explore, <b>⟳</b> to turn the city, and <b>tap a bus or plane</b> to see what it is.</span>
@@ -76,13 +84,15 @@
     <li><b>Find a place:</b> search any street, address or landmark at the top.</li>
     <li><b>Buses and planes:</b> hover or tap one to see its route or flight.</li>
     <li><b>★</b> lists places worth a look, each with a short note. Tap a pin on the map to read one.</li>
-    <li><b>◐</b> switches time of day, weather, names, buses and planes.</li>
+    <li><b>◐</b> switches time of day, weather, names, cars, buses and planes.</li>
+    <li><b>Share:</b> the arrow copies a link to exactly this view; the camera saves a picture of it.</li>
   </ul>
   <h3>What you're looking at</h3>
   <p>Every block of Burlington, South Burlington and Winooski was redrawn in a city-builder style by an open-source AI image model, working from Google's 3D map of the city. It's an illustration: small details are invented, and some won't match what's really there. Street and place names are drawn on top from OpenStreetMap, so they stay sharp when you zoom in. <a href="./how.html">How it was made, and what's wrong with it</a>.</p>
   <p>The sky follows Burlington's real sunset and the current weather at BTV. Buses move along their routes on GMT's published timetable, not live GPS. Planes are live positions from ADS-B receivers.</p>
+  <p>The cars are simulated, not tracked: they drive OpenStreetMap's streets and stop at its traffic lights, and there are more or fewer of them by the hour, the way a typical day goes. At night the street lamps and lit windows are placed to suit each street and building, not surveyed; the runway and breakwater lights follow OpenStreetMap.</p>
   <h3>Credits</h3>
-  <p class="credits">Inspired by <a href="https://iso.sloptoronto.ca" target="_blank" rel="noopener">Isometric Toronto</a> by John Fewell. 3D map imagery © Google, via Cesium ion. Drawn with Qwen-Image. Search © OpenStreetMap contributors. Weather from the National Weather Service. Bus schedule from Green Mountain Transit. Flights from adsb.lol (ODbL).</p>
+  <p class="credits">Inspired by <a href="https://iso.sloptoronto.ca" target="_blank" rel="noopener">Isometric Toronto</a> by John Fewell. 3D map imagery © Google, via Cesium ion. Drawn with Qwen-Image. Search, street names, the streets the cars drive and the lights at night © OpenStreetMap contributors (ODbL). Weather from the National Weather Service. Bus schedule from Green Mountain Transit. Flights from adsb.lol (ODbL).</p>
   <h3>Made by</h3>
   <p>Morgan, in South Burlington, Vermont. More of what I make is on my blog, <a href="https://morgz.org" target="_blank" rel="noopener">morgz.org</a>.</p>
   <p class="privacy">The site counts visits and clicks without cookies or accounts, and never records what you search for or where you are on the map.</p>
@@ -116,6 +126,7 @@
   <fieldset><legend>On the map</legend>
     <label><input type="checkbox" id="show-labels" checked> Street and place names</label>
     <label><input type="checkbox" id="show-places" checked> Places worth a look (★)</label>
+    <label><input type="checkbox" id="show-cars" checked> Cars (simulated)</label>
     <label><input type="checkbox" id="show-buses" checked> GMT buses (timetable)</label>
     <label><input type="checkbox" id="show-planes" checked> Planes (live)</label>
   </fieldset>

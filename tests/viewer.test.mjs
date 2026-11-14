@@ -96,7 +96,7 @@ test('phone: nothing overflows and controls are reachable', async () => {
   const { ctx, page, errors } = await open({ ...devices['iPhone 13'] });
   const overflow = await page.evaluate(() => document.documentElement.scrollWidth > innerWidth);
   assert.equal(overflow, false);
-  for (const sel of ['#q', '#rot-right', '#zoom-in', '#layers-btn']) {
+  for (const sel of ['#q', '#rot-right', '#zoom-in', '#layers-btn', '#share-btn', '#snap-btn', '#compass', '#about-btn']) {
     const b = await page.locator(sel).boundingBox();
     assert.ok(b && b.x >= 0 && b.y >= 0 && b.x + b.width <= 390 && b.y + b.height <= 844, `${sel} on screen`);
   }
@@ -331,6 +331,162 @@ test('places: dragging the map from a pin does not open it; the note takes and r
   assert.equal(clash, 0);
   const ev = await page.evaluate(() => window.__isoEvents.filter(e => e.event === 'place_opened').map(e => e.props.via));
   assert.deepEqual(ev, ['pin']);
+  assert.deepEqual(errors, []);
+  await ctx.close();
+});
+
+test('cars drive the streets when you are close, more at rush hour, and can be switched off', async () => {
+  const { ctx, page, errors } = await open({ viewport: { width: 1400, height: 880 } });
+  const reqs = [];
+  page.on('request', r => { if (/streets\.json/.test(r.url())) reqs.push(r.url()); });
+  // from far away there is nothing to see, so the streets are not even downloaded
+  await page.evaluate(() => window.__iso.map.setZoom(-5, { animate: false }));
+  await page.waitForTimeout(500);
+  assert.equal(await page.evaluate(() => window.__iso.cars.shown), 0);
+  // 5 pm on a Tuesday, downtown, at the drawing's own size
+  await page.evaluate(() => {
+    window.__iso.cars.offsetMs = Date.parse('2026-11-10T22:00:00Z') - Date.now();
+    window.__iso.goTo(44.4766, -73.2125, 'Downtown');
+  });
+  await page.waitForTimeout(1500);
+  await page.evaluate(() => window.__iso.map.setZoom(-1, { animate: false }));
+  await page.waitForFunction(() => window.__iso.cars.shown > 0, null, { timeout: 8000 });
+  await page.waitForTimeout(1500);
+  const rush = await page.evaluate(() => window.__iso.cars.shown);
+  assert.ok(rush >= 8 && rush <= 1500, `${rush} cars on screen at rush hour`);
+  // they move
+  const where = () => page.evaluate(() => window.__iso.cars.sim.cars.slice(0, 40).map(c => [c.lane.id, c.s]));
+  const p0 = await where(); await page.waitForTimeout(1200); const p1 = await where();
+  assert.ok(p0.some((p, i) => p1[i] && (p[0] !== p1[i][0] || Math.abs(p[1] - p1[i][1]) > 2)), 'cars are moving');
+  if (SHOTS) await page.screenshot({ path: `${SHOTS}/desktop-cars.png` });
+  // 3 am: the same streets are nearly empty
+  await page.evaluate(() => {
+    const c = window.__iso.cars; c.offsetMs = Date.parse('2026-11-10T08:00:00Z') - Date.now();
+    c.sim.setArea(null); c.aim();
+  });
+  await page.waitForTimeout(600);
+  const small = await page.evaluate(() => window.__iso.cars.shown);
+  assert.ok(small < rush / 4, `3 am (${small}) is far quieter than 5 pm (${rush})`);
+  await page.click('#layers-btn');
+  await page.uncheck('#show-cars');
+  await page.waitForTimeout(200);
+  assert.equal(await page.evaluate(() => window.__iso.cars.shown), 0);
+  assert.equal(await page.evaluate(() => window.__iso.cars.sim.cars.length), 0);
+  assert.equal(reqs.length, 1, 'streets.json is downloaded once');
+  assert.match(await page.textContent('#about'), /cars are simulated, not tracked/);
+  assert.deepEqual(errors, []);
+  await ctx.close();
+});
+
+test('people who ask for less motion start without cars', async () => {
+  const { ctx, page, errors } = await open({ viewport: { width: 1400, height: 880 }, reducedMotion: 'reduce' });
+  assert.equal(await page.isChecked('#show-cars'), false);
+  assert.equal(await page.evaluate(() => window.__iso.cars.on), false);
+  assert.deepEqual(errors, []);
+  await ctx.close();
+});
+
+test('night: lamps, windows and the airfield light up; by day nothing glows or downloads', async () => {
+  const ctx = await browser.newContext({ viewport: { width: 1400, height: 880 } });
+  const page = await ctx.newPage();
+  const errors = [], reqs = [];
+  page.on('pageerror', e => errors.push(e.message));
+  page.on('request', r => { if (/lights\.json/.test(r.url())) reqs.push(r.url()); });
+  await page.route('**/api/flights', r => r.fulfill({ json: { now: Date.now(), ac: [] } }));
+  await page.clock.setFixedTime(new Date('2026-06-15T16:00:00Z'));       // noon in Burlington
+  await page.goto(URL0);
+  await page.waitForFunction(() => window.__iso);
+  // the clock is stopped, so jump instead of flying
+  const jump = (lat, lon, z) => page.evaluate(([lat, lon, z]) => { const I = window.__iso; I.goTo(lat, lon, 'x'); I.map.stop(); I.map.setView(I.state.marker.layer.getLatLng(), z, { animate: false }); }, [lat, lon, z]);
+  await jump(44.4766, -73.2125, -1);
+  await page.waitForTimeout(500);
+  assert.equal(reqs.length, 0, 'no night data by day');
+  assert.equal(await page.evaluate(() => +document.querySelector('#lights').style.opacity), 0);
+  await page.click('#layers-btn');
+  await page.check('input[name=time][value=night]');
+  await page.waitForFunction(() => window.__iso.lights.count.lamps > 0, null, { timeout: 8000 });
+  const n = await page.evaluate(() => window.__iso.lights.count);
+  assert.ok(n.lamps >= 20, `${n.lamps} street lamps downtown`);
+  assert.ok(n.windows >= 50, `${n.windows} lit windows downtown`);
+  assert.equal(await page.evaluate(() => +document.querySelector('#lights').style.opacity), 1);
+  // light really lands on the canvas
+  const lit = await page.evaluate(() => { const c = document.querySelector('#lights'); const d = c.getContext('2d').getImageData(0, 0, c.width, c.height).data; let k = 0; for (let i = 3; i < d.length; i += 4) if (d[i] > 40) k++; return k; });
+  assert.ok(lit > 500, `${lit} lit pixels`);
+  assert.match(page.url(), /&t=night$/, 'a forced night travels with the link');
+  if (SHOTS) await page.screenshot({ path: `${SHOTS}/desktop-night-lights.png` });
+  // the airport: runway and taxiway lights
+  await jump(44.4719, -73.1533, -2);
+  await page.waitForFunction(() => window.__iso.lights.count.field > 10, null, { timeout: 5000 });
+  if (SHOTS) await page.screenshot({ path: `${SHOTS}/desktop-night-airport.png` });
+  await page.check('input[name=time][value=day]');
+  await page.waitForTimeout(200);
+  assert.equal(await page.evaluate(() => +document.querySelector('#lights').style.opacity), 0);
+  assert.equal(reqs.length, 1, 'lights.json is downloaded once');
+  assert.deepEqual(errors, []);
+  await ctx.close();
+});
+
+test('share copies a link that opens the same view, night included; snapshot saves a picture', async () => {
+  const { ctx, page, errors } = await open({ viewport: { width: 1400, height: 880 }, permissions: ['clipboard-read', 'clipboard-write'], acceptDownloads: true });
+  await page.evaluate(() => window.__iso.goTo(44.4766, -73.2125, 'Downtown'));
+  await page.waitForTimeout(1500);
+  await page.click('#rot-right');
+  await page.click('#layers-btn');
+  await page.check('input[name=time][value=night]');
+  await page.click('#layers-btn');
+  await page.click('#share-btn');
+  await page.waitForSelector('#toast:not([hidden])');
+  assert.match(await page.textContent('#toast'), /Link to this view copied/);
+  const link = await page.evaluate(() => navigator.clipboard.readText());
+  assert.equal(link, page.url());
+  assert.match(link, /#a=1&x=-?\d+&y=-?\d+&z=-?[\d.]+&t=night$/);
+  const view = () => page.evaluate(() => ({ a: window.__iso.state.angle, c: window.__iso.toPx(window.__iso.map.getCenter()).map(Math.round), z: window.__iso.map.getZoom(), t: window.__iso.state.timeMode }));
+  const v0 = await view();
+  const page2 = await ctx.newPage();
+  await page2.route('**/api/flights', r => r.fulfill({ json: { now: Date.now(), ac: [] } }));
+  await page2.goto(link);
+  await page2.waitForFunction(() => window.__iso && window.__iso.map._loaded);
+  const v1 = await page2.evaluate(() => ({ a: window.__iso.state.angle, c: window.__iso.toPx(window.__iso.map.getCenter()).map(Math.round), z: window.__iso.map.getZoom(), t: window.__iso.state.timeMode }));
+  assert.deepEqual(v1, v0);
+  assert.equal(await page2.isChecked('input[name=time][value=night]'), true);
+  assert.equal(await page2.evaluate(() => getComputedStyle(document.documentElement).getPropertyValue('--night').trim()), '1.000');
+  await page2.close();
+  // the picture
+  const [dl] = await Promise.all([page.waitForEvent('download', { timeout: 15000 }), page.click('#snap-btn')]);
+  assert.match(dl.suggestedFilename(), /^isometric-burlington-\d{4}-\d\d-\d\d\.jpg$/);
+  const buf = fs.readFileSync(await dl.path());
+  assert.ok(buf[0] === 0xFF && buf[1] === 0xD8, 'a JPEG');
+  assert.ok(buf.length > 8000, `picture of ${buf.length} bytes`);
+  const ev = await page.evaluate(() => window.__isoEvents.map(e => e.event));
+  assert.ok(ev.includes('view_shared') && ev.includes('snapshot_saved'), ev.join(','));
+  assert.deepEqual(errors, []);
+  await ctx.close();
+});
+
+test('the map still works when the street and lights files cannot be had; a picture with no map in it is not saved', async () => {
+  const ctx = await browser.newContext({ viewport: { width: 1400, height: 880 } });
+  const page = await ctx.newPage();
+  const errors = [];
+  page.on('pageerror', e => errors.push(e.message));
+  await page.route('**/api/flights', r => r.fulfill({ json: { now: Date.now(), ac: [] } }));
+  await page.route(/(streets|lights)\.json/, r => r.fulfill({ status: 404, body: 'gone' }));
+  await page.goto(URL0);
+  await page.waitForFunction(() => window.__iso && window.__iso.map._loaded);
+  await page.evaluate(() => window.__iso.goTo(44.4766, -73.2125, 'Downtown'));
+  await page.click('#layers-btn');
+  await page.check('input[name=time][value=night]');
+  await page.click('#layers-btn');
+  await page.waitForTimeout(1500);
+  assert.equal(await page.evaluate(() => getComputedStyle(document.documentElement).getPropertyValue('--night').trim()), '1.000');
+  await page.click('#rot-right');
+  await page.waitForFunction(() => window.__iso.state.angle === 1);
+  // a tile that cannot be fetched: no picture rather than an empty one
+  const r = await page.evaluate(async () => {
+    const { snapshot } = window.__iso;
+    const s = await snapshot({ width: 300, height: 200, night: 0, caption: 'x', layers: [], tileUrl: u => u, tiles: [{ src: 'nope/1.webp', x: 0, y: 0, w: 300, h: 200 }] });
+    return { drawn: s.drawn, asked: s.asked };
+  });
+  assert.deepEqual(r, { drawn: 0, asked: 1 });
   assert.deepEqual(errors, []);
   await ctx.close();
 });

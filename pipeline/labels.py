@@ -29,7 +29,7 @@ BBOX = (44.40, -73.31, 44.54, -73.13)           # south, west, north, east
 GEOID_M = -29.3                                 # orthometric -> ellipsoid height here (same as transit.py)
 DEM_Z = 14
 CACHE = ROOT / "runs" / "labels-cache"
-OVERPASS = ["https://overpass-api.de/api/interpreter", "https://maps.mail.ru/osm/tools/overpass/api/interpreter"]
+OVERPASS = ["https://maps.mail.ru/osm/tools/overpass/api/interpreter", "https://overpass-api.de/api/interpreter"]
 RANK = {"motorway": 0, "trunk": 0, "primary": 0, "secondary": 1, "tertiary": 2,
         "residential": 3, "unclassified": 3, "living_street": 3, "pedestrian": 2}
 

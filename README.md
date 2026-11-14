@@ -14,6 +14,11 @@ Tiny London; imagery Google Photorealistic 3D Tiles via Cesium ion; drawn with Q
 5. Joint sampling per angle with pinned blocks on rented H100s (Vast.ai, prepaid cap).
 6. `pipeline/tiles.py` – WebP pyramid (absolute tile indices) → R2 bucket `iso-burlington`.
 7. `viewer/` – Leaflet CRS.Simple viewer, 4-angle rotate, search, night + NWS weather.
+8. `pipeline/labels.py` – street and place names (OpenStreetMap) -> `viewer/labels.json`.
+9. `pipeline/streetlife.py` – the streets cars drive and what glows at night (OpenStreetMap) ->
+   `viewer/streets.json`, `viewer/lights.json`. Cars are simulated in the browser (`viewer/traffic.js`),
+   night lights drawn by `viewer/lights.js`; share link and snapshot in `viewer/share.js`.
+   Plan and limits: `docs/PLAN-street-life.md`. Things learned along the way: `docs/learnings/`.
 
 ## Tests
 `npm test` – grid/renderer/viewer registration + desktop and phone browser checks.
