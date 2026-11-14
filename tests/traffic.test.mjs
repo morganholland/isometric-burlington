@@ -99,7 +99,7 @@ test('every car keeps to its lane, behind the car ahead, under the limit, and st
       }
     }
     assert.ok(peak > 0, `seed ${seed}: the town never had a car`);
-    assert.ok(sim.cars.length <= 800);
+    assert.ok(sim.cars.length <= 1500);
     sim.setArea(null);
     assert.equal(sim.cars.length, 0, 'switching off clears the streets');
     assert.ok(g.lanes.every(l => l.cars.length === 0));

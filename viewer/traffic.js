@@ -8,9 +8,9 @@ import { burlingtonClock } from './transit.js';
 
 export const CAR_MIN_ZOOM = -3.25;
 const SPEED = [26, 13, 12, 11, 8.5, 11];          // m/s by street class (motorway .. residential, slip road)
-const DENSITY = [14, 12, 9, 6, 1.6, 8];           // cars per km of lane at the busiest hour
+const DENSITY = [20, 22, 16, 11, 3, 12];           // cars per km of lane at the busiest hour
 const WEIGHT = [6, 6, 4, 3, 1, 3];                // how strongly a turning car prefers each class
-const GAP = 3.5, ACCEL = 2.2, BRAKE = 4.5, STOP_LINE = 4, LANE = 1.7, CYCLE = 60, MAX_CARS = 800;
+const GAP = 3.5, ACCEL = 2.2, BRAKE = 4.5, STOP_LINE = 4, LANE = 1.7, CYCLE = 60, MAX_CARS = 1500;
 const WEEKDAY = [.06, .04, .03, .03, .05, .14, .35, .7, .9, .75, .65, .68, .75, .72, .72, .8, .95, 1, .85, .6, .45, .32, .2, .11];
 const WEEKEND = [.1, .07, .05, .04, .04, .06, .12, .22, .38, .55, .68, .76, .8, .8, .78, .75, .72, .68, .6, .5, .4, .3, .22, .15];
 const PAINT = ['#eef0f1', '#eef0f1', '#f6f5f1', '#1e2226', '#1e2226', '#2b2f36', '#8d949b', '#b9bec4', '#b9bec4', '#5c636b',
@@ -267,7 +267,7 @@ export class CarLayer {
     const scale = s / 0.23;
     const todo = [];
     for (const car of this.sim.cars) {
-      if (isHidden(car.lane, a, car.s - car.len / 2)) continue;
+      if (isHidden(car.lane, a, car.s + 1.5) || isHidden(car.lane, a, car.s - car.len - 1.5)) continue;   // nose or tail behind a building
       const p = laneAt(car.lane, car.s - car.len / 2);     // s is the car's nose
       const e = p.e + p.dir[1] * car.lane.off, n = p.n - p.dir[0] * car.lane.off;
       const [x, y] = P(e, n, p.u);
@@ -288,45 +288,73 @@ export class CarLayer {
       const v = parseInt(hex.slice(1), 16), f = x => Math.round(Math.min(255, x * k * dim));
       return `rgb(${f(v >> 16 & 255)},${f(v >> 8 & 255)},${f(v & 255)})`;
     };
-    const box = (f0, f1, w, u0, u1) => {
-      const base = [[f1, w], [f1, -w], [f0, -w], [f0, w]].map(([f, sd]) => [e + (fe * f + se * sd) * grow, n + (fn * f + sn * sd) * grow]);
-      return { bot: base.map(([x, y]) => P(x, y, u + u0 * grow)), top: base.map(([x, y]) => P(x, y, u + u1 * grow)) };
+    // a rounded outline (front f1, back f0, half-width w) at height h, as screen points
+    const ring = (f0, f1, w, h, r = 0.3) => {
+      const c = Math.min(r, w * 0.6);
+      return [[f1, w - c], [f1 - c, w], [f0 + c, w], [f0, w - c], [f0, c - w], [f0 + c, -w], [f1 - c, -w], [f1, c - w]]
+        .map(([f, sd]) => P(e + (fe * f + se * sd) * grow, n + (fn * f + sn * sd) * grow, u + h * grow));
     };
-    const quad = (pts, fill) => { ctx.fillStyle = fill; ctx.beginPath(); ctx.moveTo(pts[0][0], pts[0][1]); for (let i = 1; i < pts.length; i++) ctx.lineTo(pts[i][0], pts[i][1]); ctx.closePath(); ctx.fill(); };
-    const sides = (b, paint, nose) => {
-      const faces = [0, 1, 2, 3].map(i => ({ i, j: (i + 1) % 4, y: (b.bot[i][1] + b.bot[(i + 1) % 4][1]) / 2 })).sort((p, q) => p.y - q.y);
-      for (const { i, j } of faces.slice(2)) quad([b.bot[i], b.bot[j], b.top[j], b.top[i]], i === 0 || i === 2 ? (nose || shade(paint, 0.62)) : shade(paint, 0.78));
-    };
-    const L = car.len / 2, W = car.van ? 1.0 : 0.9, px = car.len * scale * grow;
+    const path = pts => { ctx.beginPath(); ctx.moveTo(pts[0][0], pts[0][1]); for (let i = 1; i < pts.length; i++) ctx.lineTo(pts[i][0], pts[i][1]); ctx.closePath(); };
+    const L = car.len / 2, W = car.van ? 1.0 : 0.92, px = car.len * scale * grow;
+    const top = car.van ? 2.05 : 0.9;
     ctx.globalAlpha = Math.max(0, Math.min(1, car.alpha));
-    const body = box(-L, L, W, 0.2, car.van ? 2.1 : 0.85);
-    quad(body.bot.map(([x, y]) => [x + 1.2, y + 0.8]), 'rgba(0,0,0,0.3)');
-    if (px < 9) quad(body.top, shade(car.paint, 1));
-    else {
-      sides(body, car.paint);
-      quad(body.top, shade(car.paint, 1));
+    if (px < 9) {
+      // from far away: a dab of paint, and at night a white dot in front and a red one behind
+      const c = (f, sd) => P(e + (fe * f + se * sd) * grow, n + (fn * f + sn * sd) * grow, u + top * 0.6 * grow);
+      ctx.fillStyle = shade(car.paint, 0.95); path([c(L, W), c(L, -W), c(-L, -W), c(-L, W)]); ctx.fill();
+      if (this.night > 0.3) {
+        const a = c(L, 0), b = c(-L, 0);
+        ctx.globalAlpha *= this.night;
+        ctx.fillStyle = '#fff3c4'; ctx.fillRect(a[0] - 1, a[1] - 1, 2, 2);
+        ctx.fillStyle = '#ff3b2f'; ctx.fillRect(b[0] - 0.9, b[1] - 0.9, 1.8, 1.8);
+      }
+      ctx.globalAlpha = 1;
+      return;
+    }
+    const low = ring(-L, L, W, 0.15), deck = ring(-L, L, W, top);
+    ctx.fillStyle = 'rgba(0,0,0,0.28)'; path(low.map(([x, y]) => [x + 1.3 * Math.min(2, grow * scale / 2 + 0.5), y + 1])); ctx.fill();
+    {
+      const ink = `rgba(18,22,28,${0.75 - this.night * 0.25})`;
+      ctx.lineJoin = 'round'; ctx.lineWidth = Math.max(0.9, Math.min(2.2, px * 0.035));
+      ctx.fillStyle = shade(car.paint, 0.66); ctx.strokeStyle = ink; path(hull([...low, ...deck])); ctx.fill(); ctx.stroke();
+      ctx.fillStyle = shade(car.paint, 1); path(deck); ctx.fill();
+      const glass = this.night > 0.5 ? 'rgb(22,28,36)' : 'rgb(38,52,66)';
       if (!car.van) {
-        const cab = box(-L * 0.62, L * 0.28, W * 0.86, 0.85, 1.45);
-        sides(cab, '#27323d', this.night > 0.5 ? 'rgb(20,26,34)' : 'rgb(34,46,58)');
-        quad(cab.top, shade(car.paint, 1.08));
+        const belt = ring(-L * 0.7, L * 0.34, W * 0.9, top, 0.25), roof = ring(-L * 0.5, L * 0.08, W * 0.74, 1.45, 0.25);
+        ctx.fillStyle = glass; path(hull([...belt, ...roof])); ctx.fill(); ctx.stroke();
+        ctx.fillStyle = shade(car.paint, 1.1); path(roof); ctx.fill();
       } else {
-        const glass = box(L * 0.72, L, W, 1.2, 1.9);
-        sides(glass, '#27323d');
+        // a windscreen band across the front of the roof, and the cab's side glass
+        ctx.fillStyle = glass; path(hull([...ring(L * 0.62, L - 0.05, W - 0.05, top, 0.2), ...ring(L * 0.7, L, W, 1.25, 0.2)])); ctx.fill();
+        ctx.strokeStyle = 'rgba(18,22,28,0.25)'; path(ring(-L + 0.25, L * 0.55, W - 0.2, top, 0.2)); ctx.stroke();
       }
     }
     if (this.night > 0.3) {
-      const nose = P(e + fe * L * grow, n + fn * L * grow, u + 0.6 * grow), tail = P(e - fe * L * grow, n - fn * L * grow, u + 0.7 * grow);
-      const r = Math.max(1, Math.min(3, px * 0.09));
+      const side = W * 0.62 * grow;
+      const at = (f, sd, h) => P(e + fe * f * grow + se * sd, n + fn * f * grow + sn * sd, u + h * grow);
+      const nose = at(L, 0, 0.6), tail = at(-L, 0, 0.7);
+      const r = Math.max(0.9, Math.min(2.6, px * 0.06));
       ctx.globalAlpha *= this.night;
-      if (nose[1] >= tail[1] - 1 || px < 9) {
-        const ahead = P(e + fe * (L + 5) * grow, n + fn * (L + 5) * grow, u);
-        const g = ctx.createRadialGradient(ahead[0], ahead[1], 0, ahead[0], ahead[1], Math.max(4, 7 * scale * grow));
-        g.addColorStop(0, 'rgba(255,238,180,0.45)'); g.addColorStop(1, 'rgba(255,238,180,0)');
-        ctx.fillStyle = g; ctx.beginPath(); ctx.arc(ahead[0], ahead[1], Math.max(4, 7 * scale * grow), 0, 7); ctx.fill();
-        ctx.fillStyle = '#fff3c4'; ctx.beginPath(); ctx.arc(nose[0], nose[1], r, 0, 7); ctx.fill();
+      const lamp = (p, color, rr) => { ctx.fillStyle = color; ctx.beginPath(); ctx.arc(p[0], p[1], rr, 0, 7); ctx.fill(); };
+      if (nose[1] >= tail[1] - 1) {
+        const ahead = at(L + 6, 0, 0), R = Math.max(4, 7 * scale * grow);
+        const g = ctx.createRadialGradient(ahead[0], ahead[1], 0, ahead[0], ahead[1], R);
+        g.addColorStop(0, 'rgba(255,238,180,0.42)'); g.addColorStop(1, 'rgba(255,238,180,0)');
+        ctx.fillStyle = g; ctx.beginPath(); ctx.ellipse(ahead[0], ahead[1], R, R * 0.6, 0, 0, 7); ctx.fill();
+        lamp(at(L, side, 0.6), '#fff3c4', r); lamp(at(L, -side, 0.6), '#fff3c4', r);
       }
-      if (tail[1] >= nose[1] - 1 || px < 9) { ctx.fillStyle = '#ff3b2f'; ctx.beginPath(); ctx.arc(tail[0], tail[1], r * 0.85, 0, 7); ctx.fill(); }
+      if (tail[1] >= nose[1] - 1) { lamp(at(-L, side, 0.7), '#ff3b2f', r * 0.8); lamp(at(-L, -side, 0.7), '#ff3b2f', r * 0.8); }
     }
     ctx.globalAlpha = 1;
   }
+}
+
+// the outline of a set of screen points (convex hull)
+function hull(pts) {
+  const p = pts.slice().sort((a, b) => a[0] - b[0] || a[1] - b[1]);
+  const cross = (o, a, b) => (a[0] - o[0]) * (b[1] - o[1]) - (a[1] - o[1]) * (b[0] - o[0]);
+  const lo = [], up = [];
+  for (const q of p) { while (lo.length >= 2 && cross(lo[lo.length - 2], lo[lo.length - 1], q) <= 0) lo.pop(); lo.push(q); }
+  for (let i = p.length - 1; i >= 0; i--) { const q = p[i]; while (up.length >= 2 && cross(up[up.length - 2], up[up.length - 1], q) <= 0) up.pop(); up.push(q); }
+  return lo.slice(0, -1).concat(up.slice(0, -1));
 }

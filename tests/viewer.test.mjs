@@ -353,7 +353,7 @@ test('cars drive the streets when you are close, more at rush hour, and can be s
   await page.waitForFunction(() => window.__iso.cars.shown > 0, null, { timeout: 8000 });
   await page.waitForTimeout(1500);
   const rush = await page.evaluate(() => window.__iso.cars.shown);
-  assert.ok(rush >= 8 && rush <= 800, `${rush} cars on screen at rush hour`);
+  assert.ok(rush >= 8 && rush <= 1500, `${rush} cars on screen at rush hour`);
   // they move
   const where = () => page.evaluate(() => window.__iso.cars.sim.cars.slice(0, 40).map(c => [c.lane.id, c.s]));
   const p0 = await where(); await page.waitForTimeout(1200); const p1 = await where();
@@ -396,9 +396,9 @@ test('night: lamps, windows and the airfield light up; by day nothing glows or d
   await page.clock.setFixedTime(new Date('2026-06-15T16:00:00Z'));       // noon in Burlington
   await page.goto(URL0);
   await page.waitForFunction(() => window.__iso);
-  await page.evaluate(() => window.__iso.goTo(44.4766, -73.2125, 'Downtown'));
-  await page.waitForTimeout(1500);
-  await page.evaluate(() => window.__iso.map.setZoom(-1, { animate: false }));
+  // the clock is stopped, so jump instead of flying
+  const jump = (lat, lon, z) => page.evaluate(([lat, lon, z]) => { const I = window.__iso; I.goTo(lat, lon, 'x'); I.map.stop(); I.map.setView(I.state.marker.layer.getLatLng(), z, { animate: false }); }, [lat, lon, z]);
+  await jump(44.4766, -73.2125, -1);
   await page.waitForTimeout(500);
   assert.equal(reqs.length, 0, 'no night data by day');
   assert.equal(await page.evaluate(() => +document.querySelector('#lights').style.opacity), 0);
@@ -415,9 +415,7 @@ test('night: lamps, windows and the airfield light up; by day nothing glows or d
   assert.match(page.url(), /&t=night$/, 'a forced night travels with the link');
   if (SHOTS) await page.screenshot({ path: `${SHOTS}/desktop-night-lights.png` });
   // the airport: runway and taxiway lights
-  await page.evaluate(() => window.__iso.goTo(44.4719, -73.1533, 'BTV'));
-  await page.waitForTimeout(1600);
-  await page.evaluate(() => window.__iso.map.setZoom(-2, { animate: false }));
+  await jump(44.4719, -73.1533, -2);
   await page.waitForFunction(() => window.__iso.lights.count.field > 10, null, { timeout: 5000 });
   if (SHOTS) await page.screenshot({ path: `${SHOTS}/desktop-night-airport.png` });
   await page.check('input[name=time][value=day]');

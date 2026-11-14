@@ -17,6 +17,8 @@ streets.json   the driveable streets inside the drawn region, as a graph
 lights.json    what glows after dark
   {"origin": [lat0, lon0], "lamps": [x, y, h, mask, ...], "windows": [x, y, h, mask, ...],
    "field": [x, y, h, kind, ...], "beacons": [x, y, h, kind, ...]}
+  Each list is sorted and stored as differences from the point before (x, y and h; not the last number),
+  which compresses to half the size.
   mask: bit a set = seen in view a (not behind a building; for windows also on a wall that faces that view).
   Lamps stand along the streets at a spacing typical for the kind of street (OpenStreetMap has few of the
   real poles here), so they are a picture of a lit street, not a survey. Windows are a share of the
@@ -49,6 +51,15 @@ def rnd(*key):
 
 def q(lat, lon, h):
     return [round((lon - ORIGIN[1]) * 1e5), round((lat - ORIGIN[0]) * 1e5), round(h * 10)]
+
+
+def pack(flat):
+    """Sort [x, y, h, flag, ...] points and store x, y, h as differences from the point before."""
+    recs = sorted((tuple(flat[i:i + 4]) for i in range(0, len(flat), 4)), key=lambda r: (r[1] // 40, r[0]))
+    out, px, py, ph = [], 0, 0, 0
+    for x, y, h, m in recs:
+        out += [x - px, y - py, h - ph, m]; px, py, ph = x, y, h
+    return out
 
 
 def region():
@@ -274,7 +285,7 @@ def build_field(H, bld):
         try: width = float(w["tags"].get("width", ""))
         except ValueError: width = 45 if runway else 18
         line = [[g["lat"], g["lon"], H(g["lat"], g["lon"])] for g in w["geometry"]]
-        for la, lo, h, ue, un in along(line, 60 if runway else 45, 10):
+        for la, lo, h, ue, un in along(line, 45 if runway else 35, 10):
             for side in (1, -1):
                 la2, lo2 = shift(la, lo, un * width / 2 * side, -ue * width / 2 * side)
                 field.extend(q(la2, lo2, h + 0.4) + [0 if runway else 1])
@@ -312,8 +323,8 @@ def main():
 
     streets, lines = build_streets(H, near, bld)
     field, beacons = build_field(H, bld)
-    lights = {"origin": list(ORIGIN), "lamps": build_lamps(lines, bld, near), "windows": build_windows(bld, near),
-              "field": field, "beacons": beacons}
+    lights = {"origin": list(ORIGIN), "lamps": pack(build_lamps(lines, bld, near)), "windows": pack(build_windows(bld, near)),
+              "field": pack(field), "beacons": pack(beacons)}
     for name, d in (("streets.json", streets), ("lights.json", lights)):
         f = ROOT / "viewer" / name
         f.write_text(json.dumps(d, separators=(",", ":")))
