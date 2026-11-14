@@ -1,8 +1,10 @@
 # Plan: cars, a real night, share and snapshot
 
 ## Status (2026-11-14)
-In progress on branch `claude/project-thread-o4i8ul`. Ideas taken from Isometric Toronto (iso.sloptoronto.ca and
+Done and live on isoburlington.com. Ideas taken from Isometric Toronto (iso.sloptoronto.ca and
 iso3d.sloptoronto.ca); Morgan picked these three. Nothing here costs money: OpenStreetMap data and browser code only.
+Not covered by an automated test (checked by eye): giving way at side streets, headlights at night, the blinking
+breakwater lights, and the phone share sheet (it needs a real phone).
 
 ## Requirements
 Cars
