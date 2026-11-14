@@ -2,5 +2,8 @@
   "redirects": [
     { "source": "/(.*)", "has": [{ "type": "host", "value": "isometric-burlington.vercel.app" }], "destination": "https://isoburlington.com/$1", "permanent": true },
     { "source": "/(.*)", "has": [{ "type": "host", "value": "isometric-burlington-morgans-projects-68702133.vercel.app" }], "destination": "https://isoburlington.com/$1", "permanent": true }
+  ],
+  "rewrites": [
+    { "source": "/tiles/:path*", "destination": "https://pub-9c551c98dab048f484c2c7e896e92cc0.r2.dev/:path*" }
   ]
 }

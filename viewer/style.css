@@ -23,7 +23,9 @@ html,body{height:100%;margin:0;background:var(--ground);color:var(--ink);font:14
 #labels{position:absolute;left:0;top:0;width:100vw;height:100vh;pointer-events:none}
 .leaflet-tint-pane{pointer-events:none;mix-blend-mode:multiply}
 .leaflet-ink-pane{pointer-events:none}
-#buses,#planes{position:fixed;inset:0;width:100%;height:100%;pointer-events:none;z-index:401}
+#lights{position:absolute;left:0;top:0;width:100vw;height:100vh;pointer-events:none;transition:opacity .6s}
+.leaflet-glow-pane{pointer-events:none;mix-blend-mode:screen}
+#cars,#buses,#planes{position:fixed;inset:0;width:100%;height:100%;pointer-events:none;z-index:401}
 #bus-tip{position:fixed;display:flex;gap:9px;align-items:flex-start;padding:8px 11px;font-size:12.5px;pointer-events:none;max-width:240px}
 #bus-tip .sw{width:10px;height:10px;border-radius:3px;margin-top:4px;flex:none}
 #bus-tip .long,#bus-tip .until{color:var(--muted)}
@@ -132,3 +134,7 @@ legend{font:600 11px var(--mono);letter-spacing:.08em;text-transform:uppercase;c
   .status .credit-short{display:inline}
   .hint{left:calc(12px + var(--safe-l));right:calc(64px + var(--safe-r));transform:none;max-width:none;justify-content:flex-start}
 }
+
+.stack button svg{width:17px;height:17px;display:block;margin:auto}
+#snap-btn[aria-busy=true]{opacity:.45}
+.toast{position:fixed;left:50%;transform:translateX(-50%);top:calc(70px + var(--safe-t));padding:8px 14px;font:500 13.5px var(--body);z-index:650;white-space:nowrap}
