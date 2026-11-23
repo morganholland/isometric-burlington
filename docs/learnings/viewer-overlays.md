@@ -94,3 +94,28 @@
   track until it fits, which also leaves it standing at the platform.
 - Constant speed between stations puts the evening train on the map only from about 9:14 pm (Ferrisburgh is
   well south of the drawn area); tests pick times from that, not from the station times alone.
+
+## Tapping a building (2026-11-23)
+- A tap on a drawn roof is not over the building's lot: the lot under the tap's ground point is
+  1.73 × (height) metres behind. Guessing a few fixed roof heights and taking the first lot that answers fails
+  downtown, where lots touch: the Hilton's roof gave the parking garage behind it. What works is real footprints
+  with heights, walked down the line of sight from the top, first footprint tall enough wins
+  (`viewer/buildings.js` `hitBuilding`). Test it on known tall buildings from all four sides, not just on
+  "the points fall under the pixel".
+- Overpass is unreachable from the cloud VM, but the same OpenStreetMap buildings (with `height` and
+  `building_levels`) are on ArcGIS Online as "OpenStreetMap Buildings for North America" (services6, owner
+  smoore_osm), paged 2,000 at a time. Footprints delta-encoded in half-metres are 1.1 MB raw, 380 KB gzipped:
+  fine to fetch on the first tap, not on page load. Official heights (VCGI HEIGHTFT, FEMA USA Structures) are
+  mostly empty here.
+- VCGI parcels stack one identical polygon per condo unit, so `features[0]` is one arbitrary person's unit:
+  strip the unit and name the building.
+- `.catch(() => null)` on each upstream turned an ArcGIS outage into "nothing here" cached for a week. Let a
+  source failure throw its own error type and give it a one-minute cache.
+- Leaflet fires `click` for each half of a double-click: delay the tap action ~300 ms and cancel it on
+  `dblclick`/`zoomstart`. A tap that closes an open panel should only close it.
+- A function keyed by exact coordinates can be called with endless near-duplicates that miss the CDN cache;
+  refuse more than 5 decimals so the client's rounding is the only form.
+- Once a tap waits (a delay, a first-time download, a lookup), everything that used to happen at tap time has to
+  be re-checked when the answer lands: the person may have opened another card, pressed Escape or zoomed out
+  meanwhile. Cancel the timer and bump the sequence number in the one close function, and drop the answer if
+  anything else is open by then.
