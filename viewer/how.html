@@ -44,12 +44,12 @@
   <p>I'm not a software engineer, and I'm not an illustrator. I wrote almost none of the code by hand either. I directed AI tools the whole way through, the same way I'd brief a contractor.</p>
 
   <h2>Before and after</h2>
-  <p>Drag across the picture. On one side is Google's 3D model of the waterfront, exactly as the camera saw it. On the other is the same view after the drawing model redrew it. Every building stays where it is; only the look changes.</p>
+  <p>Drag across the picture. On one side is Google's 3D model of the waterfront, exactly as the camera saw it. On the other is the same view after the drawing model redrew it. Buildings stay where they are; the look changes, and small details are invented.</p>
   <figure class="compare">
     <div class="frame" style="--cut:50%">
     <img src="./press/compare-drawn.jpg" alt="The Burlington waterfront and downtown as drawn for the map" width="1600" height="1000" loading="lazy">
     <img class="before" src="./press/compare-google.jpg" alt="The same view in Google's 3D model, before drawing" width="1600" height="1000" loading="lazy">
-    <span class="tag left">Google's model</span><span class="tag right">Drawn</span>
+    <span class="knob" aria-hidden="true">⇔</span><span class="tag left">Google's model</span><span class="tag right">Drawn</span>
     <input type="range" min="0" max="100" value="50" step="1" aria-label="Drag to compare Google's model with the drawing">
     </div>
     <figcaption>Downtown, the railyard and the waterfront, seen from over the lake. Imagery Google · Cesium ion · Drawn with Qwen-Image.</figcaption>
@@ -89,10 +89,27 @@
   <p><a class="cta" href="./">Open the map</a></p>
 </main>
 <script>
-  // drag-to-compare: the slider sets where the "before" picture is cut
+  // drag-to-compare: the slider (keyboard, screen readers) sets where the "before" picture is cut; a mouse
+  // drags anywhere on the picture, a finger only once it moves sideways, so swiping up and down still scrolls
   for (const f of document.querySelectorAll('.compare .frame')) {
     const r = f.querySelector('input');
-    const set = () => f.style.setProperty('--cut', r.value + '%');
+    const set = () => { f.style.setProperty('--cut', r.value + '%'); r.setAttribute('aria-valuetext', `${r.value}% Google's model, ${100 - r.value}% drawn`); };
+    const at = e => { const b = f.getBoundingClientRect(); r.value = Math.round(Math.min(1, Math.max(0, (e.clientX - b.left) / b.width)) * 100); set(); };
+    let start = null, dragging = false;
+    f.addEventListener('pointerdown', e => {
+      start = [e.clientX, e.clientY]; dragging = e.pointerType === 'mouse';
+      if (dragging) { e.preventDefault(); f.setPointerCapture(e.pointerId); at(e); }
+    });
+    f.addEventListener('pointermove', e => {
+      if (!start) return;
+      if (!dragging) {
+        const dx = Math.abs(e.clientX - start[0]), dy = Math.abs(e.clientY - start[1]);
+        if (dx > 6 && dx > dy) { dragging = true; f.setPointerCapture(e.pointerId); } else return;
+      }
+      at(e);
+    });
+    const end = () => { start = null; dragging = false; };
+    f.addEventListener('pointerup', end); f.addEventListener('pointercancel', end);
     r.addEventListener('input', set); set();
   }
   // back to the map where you left it (its position is in the map page's address), when you came from it

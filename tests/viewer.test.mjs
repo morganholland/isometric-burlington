@@ -299,8 +299,12 @@ test('About page: drag to compare, and a change-log link opens its spot', async 
   await page.mouse.up();
   const dragged = await cut();
   assert.ok(dragged > 12 && dragged < 28, `dragged to about a fifth (${dragged})`);
+  // what is drawn follows: the "before" picture is cut at the same place, and the knob sits there
   const clip = await page.locator('.compare .before').evaluate(i => getComputedStyle(i).clipPath);
-  assert.match(clip, /inset/, 'the before picture is clipped');
+  assert.match(clip, new RegExp(`inset\\(0(px)? calc\\(100% - ${dragged}%\\)|inset\\(0(px)? ${100 - dragged}%`), `clipped at ${dragged}% (${clip})`);
+  const knob = await page.locator('.compare .knob').boundingBox();
+  assert.ok(Math.abs(knob.x + knob.width / 2 - (box.x + box.width * dragged / 100)) < 3, 'the knob is on the cut');
+  assert.match(await page.getAttribute('.compare input', 'aria-valuetext'), new RegExp(`^${dragged}% Google`));
   // and from the keyboard
   await page.focus('.compare input');
   await page.keyboard.press('ArrowRight');
@@ -313,6 +317,37 @@ test('About page: drag to compare, and a change-log link opens its spot', async 
   await page.click('.log a[href="./#m=champ"]');
   await page.waitForFunction(() => window.__iso && window.__iso.state.moment === 'champ');
   assert.equal(await page.evaluate(() => window.__iso.moments.on), true);
+  assert.deepEqual(errors, []);
+  await ctx.close();
+});
+
+test('About page on a phone: a sideways swipe moves the cut, an up-and-down swipe scrolls the page', async () => {
+  const { ctx, page, errors } = await open({ ...devices['iPhone 13'] });
+  await page.goto(URL0 + 'how.html');
+  await page.locator('.compare .frame').scrollIntoViewIfNeeded();
+  await page.waitForFunction(() => [...document.querySelectorAll('.compare img')].every(i => i.complete && i.naturalWidth === 1600));
+  const cdp = await ctx.newCDPSession(page);
+  const swipe = async (from, to) => {
+    const pt = ([x, y]) => [{ x, y, id: 1 }];
+    await cdp.send('Input.dispatchTouchEvent', { type: 'touchStart', touchPoints: pt(from) });
+    for (let i = 1; i <= 8; i++) {
+      await cdp.send('Input.dispatchTouchEvent', { type: 'touchMove', touchPoints: pt([from[0] + (to[0] - from[0]) * i / 8, from[1] + (to[1] - from[1]) * i / 8]) });
+      await page.waitForTimeout(16);
+    }
+    await cdp.send('Input.dispatchTouchEvent', { type: 'touchEnd', touchPoints: [] });
+    await page.waitForTimeout(300);
+  };
+  const cut = () => page.locator('.compare .frame').evaluate(f => parseFloat(f.style.getPropertyValue('--cut')));
+  let box = await page.locator('.compare .frame').boundingBox();
+  const cy = box.y + box.height / 2;
+  await swipe([box.x + box.width * 0.7, cy], [box.x + box.width * 0.2, cy]);
+  const c = await cut();
+  assert.ok(c > 12 && c < 30, `a sideways swipe moves the cut (${c})`);
+  const y0 = await page.evaluate(() => scrollY);
+  box = await page.locator('.compare .frame').boundingBox();
+  await swipe([box.x + box.width * 0.8, box.y + box.height * 0.8], [box.x + box.width * 0.8, box.y + 10]);
+  assert.ok(await page.evaluate(() => scrollY) > y0 + 40, 'the page scrolls');
+  assert.equal(await cut(), c, 'scrolling past the picture leaves the cut alone');
   assert.deepEqual(errors, []);
   await ctx.close();
 });

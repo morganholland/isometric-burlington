@@ -26,7 +26,7 @@ Each slice is its own small pull request, merged when its tests are green and it
    entries link to the spot they are about, and a drag-to-compare picture of Google's model against the drawing.
    Tests: `tests/about.test.mjs` recomputes every number from the data and checks every change-log link lands
    inside the drawn map; `tests/viewer.test.mjs` drags the compare slider and follows a change-log link.
-   The compare pair is render block a0/0_0 and the same pixels of the drawn tiles, cropped to 2560×1600.
+   The compare pair is render block a0/0_0 and the same pixels of the drawn tiles, cropped to 2560×1600 and scaled to 1600×1000.
 
 ## Slice 3: corrections
 8. "Tell me what's wrong here" on the map and on the About page sends a short note with the map position.

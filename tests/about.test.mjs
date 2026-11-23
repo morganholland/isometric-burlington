@@ -4,6 +4,7 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import { readViewHash, readMoment } from '../viewer/share.js';
+import { latLonToPx } from '../viewer/geo.js';
 
 const read = p => fs.readFileSync(new URL('../' + p, import.meta.url), 'utf8');
 const json = p => JSON.parse(read(p));
@@ -60,5 +61,18 @@ test('the before-and-after pictures exist and line up', () => {
     // JPEG size from the first frame header: both pictures are the same size, so the slider lines them up
     let i = 2; while (i < b.length && !(b[i] === 0xff && b[i + 1] >= 0xc0 && b[i + 1] <= 0xc2)) i += 2 + b.readUInt16BE(i + 2);
     assert.deepEqual([b.readUInt16BE(i + 7), b.readUInt16BE(i + 5)], [1600, 1000], `${f} is 1600 × 1000`);
+  }
+});
+
+test('each change-log link opens on the spot its words name', () => {
+  // where each named view should be: Church Street Marketplace and the middle of downtown
+  const want = { 'Church Street up close': [44.4780, -73.2128], 'Downtown at night': [44.4775, -73.2140] };
+  for (const [text, [lat, lon]] of Object.entries(want)) {
+    const m = html.match(new RegExp(`href="([^"]+)">${text}<`));
+    assert.ok(m, `the change log has "${text}"`);
+    const v = readViewHash(m[1].replace(/&amp;/g, '&').slice(2));
+    const [x, y] = latLonToPx(v.a, lat, lon, 30);
+    // within about 100 m of the spot (0.23 m a pixel)
+    assert.ok(Math.hypot(v.x - x, v.y - y) < 450, `"${text}" opens ${Math.round(Math.hypot(v.x - x, v.y - y) * 0.23)} m from it`);
   }
 });
