@@ -352,6 +352,47 @@ test('About page on a phone: a sideways swipe moves the cut, an up-and-down swip
   await ctx.close();
 });
 
+test('corrections: "Something wrong here?" sends a note with the spot in the middle of the map', async () => {
+  const { ctx, page, errors } = await open({ viewport: { width: 1280, height: 820 }, hash: '#a=1&x=-900&y=300&z=0' });
+  await page.click('#about-btn');
+  await page.click('#fix-open');
+  assert.ok(await page.isHidden('#about'), 'the guide steps aside');
+  assert.ok(await page.isVisible('#fix'));
+  assert.ok(await page.isVisible('#fix-aim'), 'a crosshair marks the spot being reported');
+  const aim = await page.locator('#fix-aim').boundingBox();
+  assert.ok(Math.abs(aim.x + aim.width / 2 - 640) < 2 && Math.abs(aim.y + aim.height / 2 - 410) < 2, 'the crosshair is the middle of the map');
+  assert.ok(await page.isDisabled('#fix-send'), 'nothing to send yet');
+  await page.fill('#fix-note', 'The church steeple is missing.');
+  await page.click('#fix-send');
+  const ev = await page.evaluate(() => window.__isoEvents.filter(e => e.event === 'correction_sent').map(e => e.props));
+  assert.equal(ev.length, 1);
+  const st = await page.evaluate(() => { const [x, y] = window.__iso.toPx(window.__iso.map.getCenter()); return { a: window.__iso.state.angle, x: Math.round(x), y: Math.round(y), z: window.__iso.map.getZoom() }; });
+  assert.deepEqual([ev[0].note, ev[0].angle, ev[0].x, ev[0].y, ev[0].zoom], ['The church steeple is missing.', st.a, st.x, st.y, st.z]);
+  assert.ok(ev[0].lat > 44.3 && ev[0].lat < 44.6 && ev[0].lon > -73.4 && ev[0].lon < -73.0, 'the spot is in Burlington');
+  assert.ok(await page.isHidden('#fix') && await page.isHidden('#fix-aim'));
+  assert.match(await page.textContent('#toast'), /Thanks/);
+  // Escape closes it without sending
+  await page.click('#about-btn'); await page.click('#fix-open');
+  await page.fill('#fix-note', 'never mind');
+  await page.keyboard.press('Escape');
+  assert.ok(await page.isHidden('#fix'));
+  assert.equal(await page.evaluate(() => window.__isoEvents.filter(e => e.event === 'correction_sent').length), 1);
+  assert.deepEqual(errors, []);
+  await ctx.close();
+});
+
+test('corrections: the About page sends people to the map with the note open', async () => {
+  const { ctx, page, errors } = await open({ viewport: { width: 1280, height: 820 } });
+  await page.goto(URL0 + 'how.html');
+  await page.click('a[href="./#fix"]');
+  await page.waitForFunction(() => window.__iso);
+  await page.waitForSelector('#fix', { state: 'visible' });
+  assert.equal(await page.evaluate(() => document.activeElement.id), 'fix-note');
+  assert.doesNotMatch(await page.evaluate(() => location.hash), /fix/, 'the link is not kept in the address');
+  assert.deepEqual(errors, []);
+  await ctx.close();
+});
+
 test('the How it was made page loads, links back, and is linked from the map', async () => {
   const { ctx, page, errors } = await open({ viewport: { width: 1400, height: 880 } });
   assert.equal(await page.locator('.status .credit a[href="./how.html"]').count(), 1);

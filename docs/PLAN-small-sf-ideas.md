@@ -6,7 +6,8 @@
   (ADS-B), GMT buses on the timetable, a "How it was made" page and a tip jar. The list below is what is new.
 - Morgan said yes to every recommended answer (2026-11-23).
 - Slice 1 (snow on the ground, fireworks, Champ, holiday lights): live on isoburlington.com since 2026-11-23 (PR #4).
-- Slice 2 (About page: numbers, change log, drag-to-compare): built and tested, PR #5.
+- Slice 2 (About page: numbers, change log, drag-to-compare): live since 2026-11-23 (PR #5).
+- Slice 3 (corrections): built and tested, PR #6.
 - Slice 7 (live buses) waits on a free Swiftly key only Morgan can request: see `OWED.md`.
 - Rules: spend nothing, free feeds only, never cap zoom, say plainly on the site what is simulated or timetabled.
 
@@ -29,8 +30,13 @@ Each slice is its own small pull request, merged when its tests are green and it
    The compare pair is render block a0/0_0 and the same pixels of the drawn tiles, cropped to 2560×1600 and scaled to 1600×1000.
 
 ## Slice 3: corrections
-8. "Tell me what's wrong here" on the map and on the About page sends a short note with the map position.
-   Where it lands is Morgan's choice (question 7).
+8. "Tell me what's wrong here" on the map (in the ? guide) and on the About page (link `./#fix`) opens a note
+   card with a crosshair on the middle of the map. Sending records one PostHog event `correction_sent` with the
+   note (at most 600 characters), the view (angle, x, y, zoom), latitude and longitude, and a link to the spot.
+   No name or email. Morgan chose PostHog over email (question 7). Only the live domain sends; tests read
+   `window.__isoEvents`. The analytics hash-stripping keeps this one event's `link`, since the person chose to
+   send the spot; the guide's privacy line says so. Tests: `tests/fix.test.mjs`, `tests/track.test.mjs`,
+   `tests/viewer.test.mjs` ("corrections").
 
 ## Slice 4: shareable place lists
 9. A visitor picks places (the hand-picked ones or anything found by search), adds a title, a "by" line and

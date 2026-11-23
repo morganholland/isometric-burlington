@@ -9,6 +9,7 @@ import { LabelLayer } from './labels.js';
 import { CarLayer } from './traffic.js';
 import { LightLayer, litShare } from './lights.js';
 import { burlingtonClock } from './transit.js';
+import { correction } from './fix.js';
 import { viewHash, readViewHash, readMoment, shareLink, snapshot, deliver } from './share.js';
 import { MomentLayer, groundSnow, fetchSnowDepth, FW_SITE, CHAMP_SPOTS } from './moments.js';
 import { initTracking, track } from './track.js';
@@ -437,7 +438,28 @@ $('#hint-more').addEventListener('click', () => showAbout(true));
 $('#about-btn').addEventListener('click', () => showAbout($('#about').hidden));
 $('#about-close').addEventListener('click', () => { showAbout(false); $('#about-btn').focus(); });
 
+// ---------- corrections: a note about the spot under the crosshair ----------
+function showFix(open) {
+  $('#fix').hidden = $('#fix-aim').hidden = !open;
+  if (open) { showAbout(false); hideHint(); closePlace(); $('#fix-note').focus(); track('correction_opened'); }
+}
+$('#fix-open').addEventListener('click', () => showFix(true));
+$('#fix-close').addEventListener('click', () => { showFix(false); $('#about-btn').focus(); });
+$('#fix-cancel').addEventListener('click', () => { showFix(false); $('#about-btn').focus(); });
+$('#fix-note').addEventListener('input', e => { $('#fix-send').disabled = !e.target.value.trim(); });
+$('#fix-form').addEventListener('submit', e => {
+  e.preventDefault();
+  const [x, y] = toPx(map.getCenter());
+  const c = correction({ angle: state.angle, x, y, zoom: map.getZoom() }, $('#fix-note').value);
+  if (!c) return;
+  track('correction_sent', c);
+  $('#fix-note').value = ''; $('#fix-send').disabled = true;
+  showFix(false); $('#about-btn').focus();
+  toast("Thanks, it's on its way.");
+});
+
 addEventListener('keydown', e => {
+  if (e.key === 'Escape' && !$('#fix').hidden) { showFix(false); $('#about-btn').focus(); return; }
   if (e.key === 'Escape' && !$('#about').hidden) { showAbout(false); $('#about-btn').focus(); return; }
   if (e.key === 'Escape' && !$('#place').hidden) { closePlace(); return; }
   if (e.key === 'Escape' && !$('#places-list').hidden) { closePlacesList(); $('#places-btn').focus(); return; }
@@ -456,6 +478,7 @@ async function loadManifest() {
 }
 
 (async function boot() {
+  const wantFix = new URLSearchParams(location.hash.slice(1)).has('fix');   // read before anything rewrites the address
   state.manifest = await loadManifest();
   const any = state.manifest && state.manifest.angles && state.manifest.angles.some(Boolean);
   $('#drawing').hidden = !!any;
@@ -477,6 +500,8 @@ async function loadManifest() {
       map.fitBounds(L.latLngBounds(grid.angles[0].region.map(([x, y]) => toLL(x, y))), { padding: [40, 40], animate: false });
     }
   }
+  // the About page's "tell me what's wrong" link opens the note; the link itself is not kept
+  if (wantFix) { saveHash(); showFix(true); }
   setPaper();
   refreshWeather();
   const st = sunTimes();

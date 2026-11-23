@@ -42,7 +42,13 @@ function scrub(obj, depth = 0) {
     else scrub(v, depth + 1);
   }
 }
-export function stripHash(e) { scrub(e); return e; }
+// A correction is the one event that is about a place, because the person chose to send it: keep its link.
+export function stripHash(e) {
+  const keep = e && e.event === 'correction_sent' && e.properties ? e.properties.link : undefined;
+  scrub(e);
+  if (keep !== undefined) e.properties.link = keep;
+  return e;
+}
 
 export function track(event, props = {}) {
   log.push({ event, props });
