@@ -20,7 +20,7 @@ before(async () => {
 after(async () => { await browser?.close(); server?.kill(); });
 
 async function open(opts) {
-  const { snowDepth, hash, ...ctxOpts } = opts;
+  const { snowDepth, hash, at, ...ctxOpts } = opts;
   const ctx = await browser.newContext(ctxOpts);
   const page = await ctx.newPage();
   const errors = [];
@@ -35,6 +35,7 @@ async function open(opts) {
   ] } }));
   // snow lying at BTV (Open-Meteo): none unless a test says otherwise
   await page.route('**/api.open-meteo.com/**', r => r.fulfill({ json: { current: { snow_depth: snowDepth ?? 0 } } }));
+  if (at) await page.clock.setFixedTime(new Date(at));   // a test whose result depends on the hour or the season
   await page.goto(URL0 + (hash || ''));
   await page.waitForFunction(() => window.__iso);
   return { ctx, page, errors };
@@ -315,7 +316,8 @@ test('first visit shows a hint once; ? explains how to use the map', async () =>
 });
 
 test('analytics: records turns, guide opens and tips, and stays silent off the live domain', async () => {
-  const { ctx, page, errors } = await open({ viewport: { width: 1400, height: 880 } });
+  // a June noon: no holiday lights or fireworks to report as moments
+  const { ctx, page, errors } = await open({ viewport: { width: 1400, height: 880 }, at: '2026-06-15T16:00:00Z' });
   const posthogCalls = [];
   page.on('request', r => { if (/posthog\.com/.test(r.url())) posthogCalls.push(r.url()); });
   await page.waitForFunction(() => window.__iso.map._loaded);
