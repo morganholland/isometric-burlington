@@ -119,3 +119,15 @@
   be re-checked when the answer lands: the person may have opened another card, pressed Escape or zoomed out
   meanwhile. Cancel the timer and bump the sequence number in the one close function, and drop the answer if
   anything else is open by then.
+
+## The About page redo (2026-11-23)
+- **`srcset` with `1x, 2x` divides `naturalWidth` by the density.** When a 2x screen picks a `1440px` `2x` file,
+  the browser reports `img.naturalWidth === 720` (CSS pixels), not `1440`. Check `img.currentSrc` to prove a
+  retina browser actually loaded the 2x candidate.
+- **In-page anchor jumps break a `history.back()` "Back to the map" shortcut.** Clicking `#story` or `#support`
+  pushes hash entries onto browser history, so `history.back()` only steps to the previous section instead of
+  returning to the map. Only intercept `a[href="./"]` with `history.back()` when no `hashchange` happened on the
+  page and `location.hash` is empty; otherwise follow `./` normally.
+- **Pick the angle that looks down the street.** In angle 0 (looking east), buildings along the west side of
+  Church Street partially hide the brick pedestrian mall and a nearby construction lot sneaks into frame; angle 3
+  (looking north) looks straight up Church Street Marketplace toward the Unitarian Church.

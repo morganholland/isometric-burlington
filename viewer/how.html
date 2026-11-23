@@ -3,10 +3,10 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
-<title>How it was made · Isometric Burlington</title>
-<meta name="description" content="How Isometric Burlington was made: who drew what, what the AI got wrong, and who deserves the credit.">
-<meta property="og:title" content="How Isometric Burlington was made">
-<meta property="og:description" content="Who drew what, what the AI got wrong, and who deserves the credit.">
+<title>About · Isometric Burlington</title>
+<meta name="description" content="About Isometric Burlington: how the map was made, what's wrong with it, what's changed, and who deserves the credit.">
+<meta property="og:title" content="About · Isometric Burlington">
+<meta property="og:description" content="How Isometric Burlington was made, what the AI got wrong, what's changed, and who deserves the credit.">
 <meta property="og:image" content="https://isoburlington.com/press/og.jpg">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,700&family=IBM+Plex+Sans:wght@400;500;600&family=IBM+Plex+Mono:wght@500&display=swap">
@@ -14,10 +14,18 @@
 </head>
 <body>
 <main>
-  <a class="back" href="./">← Back to the map</a>
-  <p class="eyebrow">Isometric Burlington</p>
-  <h1>How it was made, and what's wrong with it</h1>
-  <p class="lede">I didn't draw this map. An AI image model did, one block at a time, and I spent my evenings getting it to behave. Here is exactly what that means, so you can decide for yourself what it's worth.</p>
+  <header class="page-head">
+    <a class="back" href="./">← Back to the map</a>
+    <p class="eyebrow">Isometric Burlington</p>
+    <h1>About</h1>
+    <p class="lede">I didn't draw this map. An AI image model did, one block at a time, and I spent my evenings getting it to behave. Here is exactly what that means, so you can decide for yourself what it's worth.</p>
+    <nav class="jump" aria-label="On this page">
+      <a href="#story">Story</a><span aria-hidden="true">·</span>
+      <a href="#changes">Changes</a><span aria-hidden="true">·</span>
+      <a href="#thanks">Thanks</a><span aria-hidden="true">·</span>
+      <a href="#support">Support</a>
+    </nav>
+  </header>
 
   <ul class="numbers" aria-label="The map in numbers">
     <li><b data-n="blocks">458</b><span>blocks drawn, from four sides</span></li>
@@ -28,94 +36,158 @@
     <li><b data-n="routes">25</b><span>bus routes on the timetable</span></li>
   </ul>
 
-  <figure>
-    <img src="./press/downtown-from-the-lake.jpg" alt="Downtown Burlington drawn as an isometric illustration, seen from over the lake" width="3200" height="2000" loading="lazy">
-    <figcaption>Downtown from over the lake. Imagery Google · Cesium ion · Drawn with Qwen-Image.</figcaption>
-  </figure>
+  <section id="story" class="section">
+    <figure class="wide">
+      <img src="./press/about-church-street-1x.webp" srcset="./press/about-church-street-1x.webp 1x, ./press/about-church-street.webp 2x" alt="Close-up of Church Street Marketplace looking north toward the Unitarian Church, drawn at full isometric detail" width="720" height="450" decoding="async">
+      <figcaption>Church Street Marketplace at full map detail, looking north toward the Unitarian Church. Imagery Google · Cesium ion · Drawn with Qwen-Image.</figcaption>
+    </figure>
 
-  <h2>Who did what</h2>
-  <dl class="who">
-    <div><dt>Google</dt><dd>photographed Burlington from the air and built the 3D model every picture starts from.</dd></div>
-    <div><dt>A camera I set up</dt><dd>looks at that model from 30 degrees up, from four sides, and takes 458 pictures that line up to the pixel. One pixel is 23 cm of city.</dd></div>
-    <div><dt>A teacher model</dt><dd>redrew about 400 of those pictures as illustrations: flat colour, dark outlines, a 1990s city-builder look. Automatic checks threw out the ones that moved a building or invented a lake.</dd></div>
-    <div><dt>A student model</dt><dd>the open-source Qwen-Image, learned the style from those pairs and then drew all of Burlington, South Burlington and Winooski, four times over.</dd></div>
-    <div><dt>Me</dt><dd>chose the area, the camera and the look, decided what counted as a failed drawing, threw out and redid the worst blocks, and built the map you move around in: the turning, the real sunset, the weather, the buses and the planes.</dd></div>
-  </dl>
-  <p>I'm not a software engineer, and I'm not an illustrator. I wrote almost none of the code by hand either. I directed AI tools the whole way through, the same way I'd brief a contractor.</p>
+    <h2>Who did what</h2>
+    <dl class="who">
+      <div><dt>Google</dt><dd>photographed Burlington from the air and built the 3D model every picture starts from.</dd></div>
+      <div><dt>A camera I set up</dt><dd>looks at that model from 30 degrees up, from four sides, and takes 458 pictures that line up to the pixel. One pixel is 23 cm of city.</dd></div>
+      <div><dt>A teacher model</dt><dd>redrew about 400 of those pictures as illustrations: flat colour, dark outlines, a 1990s city-builder look. Automatic checks threw out the ones that moved a building or invented a lake.</dd></div>
+      <div><dt>A student model</dt><dd>the open-source Qwen-Image, learned the style from those pairs and then drew all of Burlington, South Burlington and Winooski, four times over.</dd></div>
+      <div><dt>Me</dt><dd>chose the area, the camera and the look, decided what counted as a failed drawing, threw out and redid the worst blocks, and built the map you move around in: the turning, the real sunset, the weather, the buses, the train and the planes.</dd></div>
+    </dl>
+    <p>I'm not a software engineer, and I'm not an illustrator. I wrote almost none of the code by hand either. I directed AI tools the whole way through, the same way I'd brief a contractor.</p>
 
-  <h2>Before and after</h2>
-  <p>Drag across the picture. On one side is Google's 3D model of the waterfront, exactly as the camera saw it. On the other is the same view after the drawing model redrew it. Buildings stay where they are; the look changes, and small details are invented.</p>
-  <figure class="compare">
-    <div class="frame" style="--cut:50%">
-    <img src="./press/compare-drawn.jpg" alt="The Burlington waterfront and downtown as drawn for the map" width="1600" height="1000" loading="lazy">
-    <img class="before" src="./press/compare-google.jpg" alt="The same view in Google's 3D model, before drawing" width="1600" height="1000" loading="lazy">
-    <span class="knob" aria-hidden="true">⇔</span><span class="tag left">Google's model</span><span class="tag right">Drawn</span>
-    <input type="range" min="0" max="100" value="50" step="1" aria-label="Drag to compare Google's model with the drawing">
+    <h2>Before and after</h2>
+    <p>Drag across the picture. On one side is Google's 3D model of the waterfront, exactly as the camera saw it. On the other is the same view at full map resolution after the drawing model redrew it. Buildings stay where they are; the look changes, and small details are invented.</p>
+    <figure class="compare wide">
+      <div class="frame" style="--cut:50%">
+        <img src="./press/compare-drawn-1x.webp" srcset="./press/compare-drawn-1x.webp 1x, ./press/compare-drawn.webp 2x" alt="Close-up of the Burlington waterfront, marina and Waterfront Park as drawn for the map" width="720" height="450" loading="lazy" decoding="async">
+        <img class="before" src="./press/compare-google-1x.webp" srcset="./press/compare-google-1x.webp 1x, ./press/compare-google.webp 2x" alt="The same close-up of the Burlington waterfront in Google's 3D model, before drawing" width="720" height="450" loading="lazy" decoding="async">
+        <span class="knob" aria-hidden="true">⇔</span><span class="tag left">Google's model</span><span class="tag right">Drawn</span>
+        <input type="range" min="0" max="100" value="50" step="1" aria-label="Drag to compare Google's model with the drawing">
+      </div>
+      <figcaption>The Burlington waterfront, marina and Waterfront Park, seen from over the lake. Imagery Google · Cesium ion · Drawn with Qwen-Image.</figcaption>
+    </figure>
+
+    <h2>What's wrong with it</h2>
+    <p>A neighbour on r/burlington put it better than I could: the charm wears off when you zoom in and see <q>mushy textures and cars melting on the streets.</q> That's fair, and it's worth explaining.</p>
+    <ul class="wrong">
+      <li><b>The cars melt.</b> Google's 3D model turns every parked car into a soft blob, and the drawing model faithfully inks the blob. Fixing it means redrawing the map with the streets cleaned up first.</li>
+      <li><b>It goes soft when you zoom far in.</b> The drawing has a real size, 23 cm per pixel. Past that you're enlarging it, like holding a magnifying glass to a printed poster. The street names and labels that appear up close are drawn fresh at any size, so they stay sharp.</li>
+      <li><b>Small details are invented.</b> Signs are sign-shaped, not readable. A window count may be off. Your porch might be the wrong colour. It's an illustration of the city, not a survey of it.</li>
+      <li><b>It's a snapshot.</b> Google's imagery is a year or more old, so new buildings are missing and gone ones remain.</li>
+    </ul>
+
+    <figure class="wide">
+      <img src="./press/about-city-hall-park-1x.webp" srcset="./press/about-city-hall-park-1x.webp 1x, ./press/about-city-hall-park.webp 2x" alt="Close-up of City Hall Park, City Hall and Main Street in downtown Burlington drawn at full resolution" width="720" height="450" loading="lazy" decoding="async">
+      <figcaption>City Hall Park and Main Street up close: crisp roofs and park trees next to blobby parked cars inked straight from Google's 3D scan.</figcaption>
+    </figure>
+
+    <p>What a hand-drawn map has that this one doesn't is a person deciding, building by building, what matters. I can't fake that with pixels, so I've stopped trying to hide it and added what I can:</p>
+    <ul class="wrong">
+      <li><b>Names drawn sharp on top.</b> Street, neighbourhood, park and water names from OpenStreetMap are lettered over the drawing as you zoom in, and stay crisp at any size. They step out of the way where a building stands in front of the street.</li>
+      <li><b>A paper grain.</b> The closer you zoom, the more the map looks like a printed sheet you're leaning into, rather than a photo blown up too far.</li>
+      <li><b>Places worth a look.</b> The ★ button and the diamond pins mark a short list of spots around town, each with a note, and let you make and share your own list.</li>
+    </ul>
+
+    <h2>Around town, up close</h2>
+    <p>Every block from the lake up to the hill and across the river into Winooski is drawn at the same 23 cm scale—cars, buses, the Amtrak train and night lights sit right on top of it.</p>
+    <figure class="wide">
+      <img src="./press/about-uvm-green-1x.webp" srcset="./press/about-uvm-green-1x.webp 1x, ./press/about-uvm-green.webp 2x" alt="Close-up of UVM's University Green with Ira Allen Chapel, Billings Library and Old Mill drawn at full resolution" width="720" height="450" loading="lazy" decoding="async">
+      <figcaption>UVM's green, with Ira Allen Chapel, Billings Library and Old Mill on the hill.</figcaption>
+    </figure>
+    <figure class="wide">
+      <img src="./press/about-winooski-rotary-1x.webp" srcset="./press/about-winooski-rotary-1x.webp 1x, ./press/about-winooski-rotary.webp 2x" alt="Close-up of Winooski's rotary, downtown blocks, Champlain Mill and the Winooski River falls drawn at full resolution" width="720" height="450" loading="lazy" decoding="async">
+      <figcaption>Winooski's rotary, downtown blocks, Champlain Mill and the falls on the Winooski River.</figcaption>
+    </figure>
+  </section>
+
+  <section id="changes" class="section">
+    <h2>Changes</h2>
+    <p class="section-intro">Newest first. Click any picture or link to open the map right on that spot.</p>
+    <ol class="log">
+      <li>
+        <time datetime="2026-11-23">Nov 23</time>
+        <div class="log-body">
+          <p>Amtrak's Ethan Allen Express arrives at and leaves <a href="./#a=0&amp;x=58&amp;y=1256&amp;z=0">Union Station</a> on its timetable. Tap any building zoomed in for its public record, make your own shareable list under ★, or tell me when a block is wrong.</p>
+        </div>
+        <a class="log-thumb" href="./#a=0&amp;x=58&amp;y=1256&amp;z=0" aria-label="Open Union Station on the map">
+          <img src="./press/log-amtrak-1x.webp" srcset="./press/log-amtrak-1x.webp 1x, ./press/log-amtrak.webp 2x" alt="Union Station and the Amtrak rail platform at the foot of Main Street" width="240" height="150" loading="lazy" decoding="async">
+        </a>
+      </li>
+      <li>
+        <time datetime="2026-11-23">Nov 23</time>
+        <div class="log-body">
+          <p>Snow on the ground turns the map white. Fireworks over the waterfront on July 3 and New Year's Eve, holiday lights on Church Street, and Champ, now and then, in the lake. <a href="./#m=fireworks">See the fireworks</a> · <a href="./#m=champ">Look for Champ</a></p>
+        </div>
+        <a class="log-thumb" href="./#m=fireworks" aria-label="See fireworks over the waterfront">
+          <img src="./press/log-moments-1x.webp" srcset="./press/log-moments-1x.webp 1x, ./press/log-moments.webp 2x" alt="Waterfront Park lawn, seawall and Lake Champlain where fireworks rise" width="240" height="150" loading="lazy" decoding="async">
+        </a>
+      </li>
+      <li>
+        <time datetime="2026-11-13">Nov 13</time>
+        <div class="log-body">
+          <p>Cars on the streets (simulated), real street lamps and lit windows at night, and buttons to share a view or save a picture of it. <a href="./#a=0&amp;x=-773&amp;y=216&amp;z=-1&amp;t=night">Downtown at night</a></p>
+        </div>
+        <a class="log-thumb" href="./#a=0&amp;x=-773&amp;y=216&amp;z=-1&amp;t=night" aria-label="Open downtown Burlington at night">
+          <img src="./press/log-night-1x.webp" srcset="./press/log-night-1x.webp 1x, ./press/log-night.webp 2x" alt="Downtown Burlington blocks and church steeple where cars drive and lamps glow at night" width="240" height="150" loading="lazy" decoding="async">
+        </a>
+      </li>
+      <li>
+        <time datetime="2026-11-11">Nov 11</time>
+        <div class="log-body">
+          <p>Street and place names drawn sharp when you zoom in, a paper grain, and a few places worth a look (★). <a href="./#a=0&amp;x=-1300&amp;y=-40&amp;z=0.5">Church Street up close</a></p>
+        </div>
+        <a class="log-thumb" href="./#a=0&amp;x=-1300&amp;y=-40&amp;z=0.5" aria-label="Open Church Street up close on the map">
+          <img src="./press/log-church-st-1x.webp" srcset="./press/log-church-st-1x.webp 1x, ./press/log-church-st.webp 2x" alt="Brick pedestrian blocks of Church Street Marketplace lined with trees" width="240" height="150" loading="lazy" decoding="async">
+        </a>
+      </li>
+      <li>
+        <time datetime="2026-11-10">Nov 10</time>
+        <div class="log-body">
+          <p>The map goes up at isoburlington.com: four sides to turn, the real sunset, live weather, buses on the timetable and live planes. <a href="./">Open the map</a></p>
+        </div>
+        <a class="log-thumb" href="./" aria-label="Open Isometric Burlington">
+          <img src="./press/log-launch-1x.webp" srcset="./press/log-launch-1x.webp 1x, ./press/log-launch.webp 2x" alt="Burlington Boathouse and Lake Champlain marina at the waterfront" width="240" height="150" loading="lazy" decoding="async">
+        </a>
+      </li>
+      <li>
+        <time datetime="2026-11-09">Nov 9</time>
+        <div class="log-body">
+          <p>The first test pictures of downtown, UVM and Winooski come out of Google's model. <a href="./#a=0&amp;x=-1650&amp;y=-2580&amp;z=-0.5">See UVM on the map</a></p>
+        </div>
+        <a class="log-thumb" href="./#a=0&amp;x=-1650&amp;y=-2580&amp;z=-0.5" aria-label="Open UVM on the map">
+          <img src="./press/log-first-tests-1x.webp" srcset="./press/log-first-tests-1x.webp 1x, ./press/log-first-tests.webp 2x" alt="Billings Library and Ira Allen Chapel on UVM's campus" width="240" height="150" loading="lazy" decoding="async">
+        </a>
+      </li>
+    </ol>
+  </section>
+
+  <section id="thanks" class="section">
+    <h2>Thanks</h2>
+    <p>The method isn't mine. I followed <a href="https://iso.sloptoronto.ca" target="_blank" rel="noopener">Isometric Toronto</a> by John Fewell, who followed Tiny London by Boris Starkov, who built on Isometric NYC by Andy Coenen. Each of them wrote down how they did it, which is the only reason someone like me could. The longer story of building this is on my blog, <a href="https://morgz.org" target="_blank" rel="noopener">morgz.org</a>.</p>
+    <dl class="credits-list">
+      <div><dt>3D imagery</dt><dd>Photorealistic 3D Tiles © Google, via Cesium ion — 458 blocks rendered from four sides.</dd></div>
+      <div><dt>Drawings</dt><dd>Qwen-Image (open-source), fine-tuned on ~400 checked illustration pairs.</dd></div>
+      <div><dt>Streets, names &amp; lights</dt><dd>Map data, search, street names, simulated traffic roads and night lighting © OpenStreetMap contributors (ODbL).</dd></div>
+      <div><dt>Building records</dt><dd>Vermont Center for Geographic Information (VCGI) statewide parcels and City of Burlington assessor data (address, use and year built; never owners or values).</dd></div>
+      <div><dt>Weather &amp; snow</dt><dd>Live weather from the National Weather Service at BTV; snow on the ground from <a href="https://open-meteo.com" target="_blank" rel="noopener">Open-Meteo</a> (CC BY 4.0).</dd></div>
+      <div><dt>Buses &amp; train</dt><dd>Published schedules from Green Mountain Transit and Amtrak's Ethan Allen Express (timetabled, not live GPS).</dd></div>
+      <div><dt>Planes</dt><dd>Live ADS-B positions from adsb.lol and adsb.fi (ODbL).</dd></div>
+      <div><dt>For fun</dt><dd>Simulated cars, July 3 and New Year's Eve fireworks, Church Street holiday lights, and Champ in the lake.</dd></div>
+    </dl>
+    <p class="credits">A non-commercial hobby project by Morgan, in South Burlington, Vermont.</p>
+  </section>
+
+  <section id="support" class="support-card" aria-labelledby="support-title">
+    <h2 id="support-title">Help draw more of Vermont</h2>
+    <p>The map is one person's side project. Tips help keep it online and pay for drawing the next towns. Any amount helps, and I'll move your neighborhood up the list.</p>
+    <div class="support-actions">
+      <a class="btn primary tip-btn" href="https://venmo.com/morgan-holland?txn=pay&amp;note=Isometric%20Burlington%20%E2%98%95" target="_blank" rel="noopener">Venmo @morgan-holland</a>
+      <a class="btn secondary" href="./#fix">Suggest the next neighborhood</a>
     </div>
-    <figcaption>Downtown, the railyard and the waterfront, seen from over the lake. Imagery Google · Cesium ion · Drawn with Qwen-Image.</figcaption>
-  </figure>
+  </section>
 
-  <h2>What's wrong with it</h2>
-  <p>A neighbour on r/burlington put it better than I could: the charm wears off when you zoom in and see <q>mushy textures and cars melting on the streets.</q> That's fair, and it's worth explaining.</p>
-  <ul class="wrong">
-    <li><b>The cars melt.</b> Google's 3D model turns every parked car into a soft blob, and the drawing model faithfully inks the blob. Fixing it means redrawing the map with the streets cleaned up first.</li>
-    <li><b>It goes soft when you zoom far in.</b> The drawing has a real size, 23 cm per pixel. Past that you're enlarging it, like holding a magnifying glass to a printed poster. The street names and labels that appear up close are drawn fresh at any size, so they stay sharp.</li>
-    <li><b>Small details are invented.</b> Signs are sign-shaped, not readable. A window count may be off. Your porch might be the wrong colour. It's an illustration of the city, not a survey of it.</li>
-    <li><b>It's a snapshot.</b> Google's imagery is a year or more old, so new buildings are missing and gone ones remain.</li>
-  </ul>
-  <p>What a hand-drawn map has that this one doesn't is a person deciding, building by building, what matters. I can't fake that with pixels, so I've stopped trying to hide it and added what I can:</p>
-  <ul class="wrong">
-    <li><b>Names drawn sharp on top.</b> Street, neighbourhood, park and water names from OpenStreetMap are lettered over the drawing as you zoom in, and stay crisp at any size. They step out of the way where a building stands in front of the street.</li>
-    <li><b>A paper grain.</b> The closer you zoom, the more the map looks like a printed sheet you're leaning into, rather than a photo blown up too far.</li>
-    <li><b>Places worth a look.</b> The ★ button and the diamond pins mark a short list of spots around town, each with a note. It's a start, not a guidebook.</li>
-  </ul>
-
-  <h2>Credit where it's due</h2>
-  <p>The method isn't mine. I followed <a href="https://iso.sloptoronto.ca" target="_blank" rel="noopener">Isometric Toronto</a> by John Fewell, who followed Tiny London by Boris Starkov, who built on Isometric NYC by Andy Coenen. Each of them wrote down how they did it, which is the only reason someone like me could.</p>
-  <p class="credits">3D imagery © Google, via Cesium ion. Drawn with Qwen-Image. Map data and search © OpenStreetMap contributors. Weather from the National Weather Service; snow on the ground from Open-Meteo (CC BY 4.0). Bus schedule from Green Mountain Transit. Flights from adsb.lol (ODbL). A non-commercial hobby project.</p>
-
-
-  <h2>What's changed</h2>
-  <ol class="log">
-    <li><time datetime="2026-11-23">Nov 23</time><p>Snow on the ground turns the map white. Fireworks over the waterfront on July 3 and New Year's Eve, holiday lights on Church Street, and Champ, now and then, in the lake. <a href="./#m=fireworks">See the fireworks</a> · <a href="./#m=champ">Look for Champ</a></p></li>
-    <li><time datetime="2026-11-13">Nov 13</time><p>Cars on the streets (simulated), real street lamps and lit windows at night, and buttons to share a view or save a picture of it. <a href="./#a=0&amp;x=-773&amp;y=216&amp;z=-1&amp;t=night">Downtown at night</a></p></li>
-    <li><time datetime="2026-11-11">Nov 11</time><p>Street and place names drawn sharp when you zoom in, a paper grain, and a few places worth a look (★). <a href="./#a=0&amp;x=-1300&amp;y=-40&amp;z=0.5">Church Street up close</a></p></li>
-    <li><time datetime="2026-11-10">Nov 10</time><p>The map goes up at isoburlington.com: four sides to turn, the real sunset, live weather, buses on the timetable and live planes. <a href="./">Open the map</a></p></li>
-    <li><time datetime="2026-11-09">Nov 9</time><p>The first test pictures of downtown, UVM and Winooski come out of Google's model.</p></li>
-  </ol>
-
-  <h2>Tell me what's wrong on your street</h2>
-  <p>If the map gets your block badly wrong, or there's a place that deserves a note, I'd like to hear it: <a href="./#fix">open the map, move to the spot and tell me what's wrong</a>. No name or email is asked for. The longer story of building this is on my blog, <a href="https://morgz.org" target="_blank" rel="noopener">morgz.org</a>.</p>
-  <p><a class="cta" href="./">Open the map</a></p>
+  <footer class="about-footer">
+    <p>What's new is under <a href="#changes">Changes</a>, and the data and people behind it under <a href="#thanks">Thanks</a>.</p>
+    <p class="footer-back"><a href="./">← Open the map</a></p>
+  </footer>
 </main>
-<script>
-  // drag-to-compare: the slider (keyboard, screen readers) sets where the "before" picture is cut; a mouse
-  // drags anywhere on the picture, a finger only once it moves sideways, so swiping up and down still scrolls
-  for (const f of document.querySelectorAll('.compare .frame')) {
-    const r = f.querySelector('input');
-    const set = () => { f.style.setProperty('--cut', r.value + '%'); r.setAttribute('aria-valuetext', `${r.value}% Google's model, ${100 - r.value}% drawn`); };
-    const at = e => { const b = f.getBoundingClientRect(); r.value = Math.round(Math.min(1, Math.max(0, (e.clientX - b.left) / b.width)) * 100); set(); };
-    let start = null, dragging = false;
-    f.addEventListener('pointerdown', e => {
-      start = [e.clientX, e.clientY]; dragging = e.pointerType === 'mouse';
-      if (dragging) { e.preventDefault(); f.setPointerCapture(e.pointerId); at(e); }
-    });
-    f.addEventListener('pointermove', e => {
-      if (!start) return;
-      if (!dragging) {
-        const dx = Math.abs(e.clientX - start[0]), dy = Math.abs(e.clientY - start[1]);
-        if (dx > 6 && dx > dy) { dragging = true; f.setPointerCapture(e.pointerId); } else return;
-      }
-      at(e);
-    });
-    const end = () => { start = null; dragging = false; };
-    f.addEventListener('pointerup', end); f.addEventListener('pointercancel', end);
-    r.addEventListener('input', set); set();
-  }
-  // back to the map where you left it (its position is in the map page's address), when you came from it
-  for (const a of document.querySelectorAll('a[href="./"]')) a.addEventListener('click', e => {
-    try { if (document.referrer && new URL(document.referrer).origin === location.origin && history.length > 1) { e.preventDefault(); history.back(); } } catch {}
-  });
-</script>
+<script type="module" src="./how.js"></script>
 </body>
 </html>
