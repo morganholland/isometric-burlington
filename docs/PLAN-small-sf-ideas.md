@@ -4,8 +4,9 @@
 - Asked for by Morgan after reading smallsf.com/about: "do all of it" (seven ideas).
 - Reading the code showed the map already has live weather (NWS at BTV, with snow, rain and fog), live planes
   (ADS-B), GMT buses on the timetable, a "How it was made" page and a tip jar. The list below is what is new.
-- Slice 1 (local moments and snow on the ground) in progress. Questions out to Morgan; recommended answers
-  are being built meanwhile.
+- Morgan said yes to every recommended answer (2026-11-23).
+- Slice 1 (snow on the ground, fireworks, Champ, holiday lights): built and tested, PR #4.
+- Slice 7 (live buses) waits on a free Swiftly key only Morgan can request: see `OWED.md`.
 - Rules: spend nothing, free feeds only, never cap zoom, say plainly on the site what is simulated or timetabled.
 
 Each slice is its own small pull request, merged when its tests are green and it has been checked in a browser.
