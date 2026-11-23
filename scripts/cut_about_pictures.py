@@ -86,7 +86,7 @@ def cut_compare(angle: int, bx: int, by: int, ox: int, oy: int, w: int, h: int):
 def main():
     # Feature close-ups (1440x900 2x = 1:1 map pixels, 720x450 1x)
     # 1. Church Street Marketplace (hero, Angle 3 looking north straight up the brick mall toward the Unitarian Church)
-    cut_centered(3, -208, -980, 1440, 900, "about-church-street")
+    cut_centered(3, -208, -1220, 1440, 900, "about-church-street")
     # 2. The waterfront (before & after compare: Waterfront Park, marina, Boathouse & ECHO)
     #    Block (-4096, 0) covers x in [-4096, 0), y in [0, 4096).
     cut_compare(0, -4096, 0, 2400, 1050, 1440, 900)

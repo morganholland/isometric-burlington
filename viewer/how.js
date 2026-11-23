@@ -52,7 +52,7 @@ if (tipBtn) {
 // would only step to the previous section instead of returning to the map.
 let samePageNavs = 0;
 addEventListener('hashchange', () => { samePageNavs++; });
-for (const a of document.querySelectorAll('a[href="./"]')) {
+for (const a of document.querySelectorAll('a.back, .footer-back a[href="./"]')) {
   a.addEventListener('click', e => {
     try {
       if (samePageNavs === 0 && !location.hash && document.referrer && new URL(document.referrer).origin === location.origin && history.length > 1) {

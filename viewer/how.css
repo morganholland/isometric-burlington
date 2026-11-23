@@ -44,7 +44,7 @@ p{margin:0 0 15px}
 figure{margin:22px 0 24px}
 figure.wide{margin-left:-20px;margin-right:-20px}
 @media (max-width:740px){figure.wide{margin-left:0;margin-right:0}}
-figure img{display:block;width:100%;height:auto;border-radius:10px;border:1px solid var(--line);background:var(--soft)}
+figure img{display:block;width:100%;height:auto;box-sizing:border-box;border-radius:10px;border:1px solid var(--line);background:var(--soft)}
 figcaption{font:500 12px/1.5 var(--mono);color:var(--muted);margin-top:8px}
 figure.wide figcaption{padding:0 2px}
 

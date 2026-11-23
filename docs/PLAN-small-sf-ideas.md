@@ -12,7 +12,7 @@
 - Slice 5 (the train): live since 2026-11-23 (PR #8).
 - Slice 6 (tap a building): live since 2026-11-23 (PR #9).
 - Slice 7 (live buses) waits on a free Swiftly key only Morgan can request: see `OWED.md`.
-- Slice 8 (About page redo, approved by Morgan 2026-11-23): in progress.
+- Slice 8 (About page redo, approved by Morgan 2026-11-23): live since 2026-11-23 (PR #10).
 - Rules: spend nothing, free feeds only, never cap zoom, say plainly on the site what is simulated or timetabled.
 
 Each slice is its own small pull request, merged when its tests are green and it has been checked in a browser.
@@ -97,7 +97,7 @@ Each slice is its own small pull request, merged when its tests are green and it
     rotary, and the before-and-after compare pair lines up pixel-for-pixel.
 15. The page is titled and headed "About" (keeping the `how.html` URL so old links still work), with top jump
     links Story · Changes · Thanks · Support pointing to `#story`, `#changes`, `#thanks`, and `#support`. The
-    map's ⓘ card and status bar link to `./how.html` with the text "About".
+    map's ? guide card and status bar link to `./how.html` with the text "About".
 16. Every entry in the Changes log has a small clickable picture of what changed that opens the map on that spot
     or named moment (all inside the drawn map).
 17. A Support card at the bottom titled "Help draw more of Vermont" carries Morgan's exact copy, a primary button
