@@ -10,8 +10,9 @@
 - Slice 3 (corrections): live since 2026-11-23 (PR #6); notes collect in the PostHog insight "Map corrections from visitors".
 - Slice 4 (visitor lists): live since 2026-11-23 (PR #7).
 - Slice 5 (the train): live since 2026-11-23 (PR #8).
-- Slice 6 (tap a building): built and tested in PR #9; reworked after review so taps find the building seen, not the lot behind it.
+- Slice 6 (tap a building): live since 2026-11-23 (PR #9).
 - Slice 7 (live buses) waits on a free Swiftly key only Morgan can request: see `OWED.md`.
+- Slice 8 (About page redo, approved by Morgan 2026-11-23): live since 2026-11-23 (PR #10).
 - Rules: spend nothing, free feeds only, never cap zoom, say plainly on the site what is simulated or timetabled.
 
 Each slice is its own small pull request, merged when its tests are green and it has been checked in a browser.
@@ -88,6 +89,22 @@ Each slice is its own small pull request, merged when its tests are green and it
 ## Slice 7: live buses
 13. With a free Swiftly key for GMT's live feed (only Morgan can request it), buses move by GPS and the label
     says "live"; without it, or when the feed fails, the timetable buses stay.
+
+## Slice 8: About page redo
+14. Every picture on `viewer/how.html` is cut at full level-0 resolution (1 map pixel = 1 image pixel for the 2x
+    file, or close), served at 1x and 2x via `srcset`, under 500 KB per file, with `width`, `height` and real
+    `alt` text. Featured spots include Church Street, the waterfront, City Hall Park, UVM's green and Winooski's
+    rotary, and the before-and-after compare pair lines up pixel-for-pixel.
+15. The page is titled and headed "About" (keeping the `how.html` URL so old links still work), with top jump
+    links Story · Changes · Thanks · Support pointing to `#story`, `#changes`, `#thanks`, and `#support`. The
+    map's ? guide card and status bar link to `./how.html` with the text "About".
+16. Every entry in the Changes log has a small clickable picture of what changed that opens the map on that spot
+    or named moment (all inside the drawn map).
+17. A Support card at the bottom titled "Help draw more of Vermont" carries Morgan's exact copy, a primary button
+    "Venmo @morgan-holland" linking to the same Venmo URL the map uses and firing `tip_clicked` with
+    `placement: 'about_page'`, and a second button "Suggest the next neighborhood" linking `./#fix` which opens
+    the map's corrections note on load. No email address appears anywhere on the page.
+18. The footer line reads "What's new is under Changes, and the data and people behind it under Thanks."
 
 ## Not doing
 - Redrawing with a paid image model, live boats (needs a key and an always-on connection our hosting lacks),

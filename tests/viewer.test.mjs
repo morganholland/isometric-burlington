@@ -423,7 +423,10 @@ test('About page: drag to compare, and a change-log link opens its spot', async 
   await page.goto(URL0 + 'how.html');
   const frame = page.locator('.compare .frame');
   await frame.scrollIntoViewIfNeeded();
-  await page.waitForFunction(() => [...document.querySelectorAll('.compare img')].every(i => i.complete && i.naturalWidth === 1600));
+  await page.waitForFunction(() => {
+    const imgs = [...document.querySelectorAll('.compare img')];
+    return imgs.length === 2 && imgs.every(i => i.complete && i.naturalWidth >= 720) && imgs[0].naturalWidth === imgs[1].naturalWidth && imgs[0].naturalHeight === imgs[1].naturalHeight;
+  });
   const cut = () => frame.evaluate(f => parseFloat(f.style.getPropertyValue('--cut')));
   assert.equal(await cut(), 50, 'starts half and half');
   // the "before" picture is cut where the slider is: drag from the middle towards the left
@@ -448,7 +451,13 @@ test('About page: drag to compare, and a change-log link opens its spot', async 
   // the numbers row and change log fit a phone
   await page.setViewportSize({ width: 390, height: 844 });
   assert.equal(await page.evaluate(() => document.documentElement.scrollWidth > innerWidth), false, 'fits a phone');
-  // "Look for Champ" opens the map with Champ asked for
+  // clicking a change-log thumbnail opens the map on that spot
+  const firstThumb = page.locator('.log a.log-thumb').first();
+  await firstThumb.scrollIntoViewIfNeeded();
+  await firstThumb.click();
+  await page.waitForFunction(() => window.__iso);
+  // and "Look for Champ" opens the map with Champ asked for
+  await page.goto(URL0 + 'how.html');
   await page.click('.log a[href="./#m=champ"]');
   await page.waitForFunction(() => window.__iso && window.__iso.state.moment === 'champ');
   assert.equal(await page.evaluate(() => window.__iso.moments.on), true);
@@ -460,7 +469,7 @@ test('About page on a phone: a sideways swipe moves the cut, an up-and-down swip
   const { ctx, page, errors } = await open({ ...devices['iPhone 13'] });
   await page.goto(URL0 + 'how.html');
   await page.locator('.compare .frame').scrollIntoViewIfNeeded();
-  await page.waitForFunction(() => [...document.querySelectorAll('.compare img')].every(i => i.complete && i.naturalWidth === 1600));
+  await page.waitForFunction(() => [...document.querySelectorAll('.compare img')].every(i => i.complete && i.naturalWidth === 720 && !i.currentSrc.includes('-1x.')));
   const cdp = await ctx.newCDPSession(page);
   const swipe = async (from, to) => {
     const pt = ([x, y]) => [{ x, y, id: 1 }];
@@ -543,7 +552,7 @@ test('corrections: one card at a time, and on a phone the note stays clear of th
 test('corrections: the About page sends people to the map with the note open', async () => {
   const { ctx, page, errors } = await open({ viewport: { width: 1280, height: 820 } });
   await page.goto(URL0 + 'how.html');
-  await page.click('a[href="./#fix"]');
+  await page.click('#support a[href="./#fix"]');
   await page.waitForFunction(() => window.__iso);
   await page.waitForSelector('#fix', { state: 'visible' });
   assert.equal(await page.evaluate(() => document.activeElement.id), 'fix-note');
@@ -653,14 +662,51 @@ test('visitor lists: make one from the ★ panel, and its link opens the same li
   await ctx.close();
 });
 
-test('the How it was made page loads, links back, and is linked from the map', async () => {
-  const { ctx, page, errors } = await open({ viewport: { width: 1400, height: 880 } });
-  assert.equal(await page.locator('.status .credit a[href="./how.html"]').count(), 1);
+test('the About page loads, links back, serves 2x pictures, tracks tips, and is linked from the map', async () => {
+  const { ctx, page, errors } = await open({ viewport: { width: 1400, height: 880 }, deviceScaleFactor: 2 });
+  const statusLink = page.locator('.status .credit a[href="./how.html"]');
+  assert.equal(await statusLink.count(), 1);
+  assert.equal((await statusLink.textContent()).trim(), 'About');
   await page.click('#about-btn');
-  await page.click('#about a[href="./how.html"]');
+  const guideLink = page.locator('#about a[href="./how.html"]');
+  assert.equal((await guideLink.textContent()).trim(), 'About');
+  await guideLink.click();
   await page.waitForURL(/how\.html$/);
-  assert.match(await page.textContent('h1'), /How it was made/);
+  assert.equal((await page.textContent('h1')).trim(), 'About');
   assert.match(await page.textContent('main'), /melt/);
+  // every image loads at 2x resolution on a 2x display
+  await page.evaluate(async () => {
+    for (const img of document.querySelectorAll('img')) {
+      img.loading = 'eager';
+      img.scrollIntoView();
+    }
+  });
+  await page.waitForFunction(() => [...document.querySelectorAll('img')].every(i => i.complete && i.naturalWidth > 0));
+  const dims = await page.evaluate(() => [...document.querySelectorAll('img')].map(i => ({
+    src: i.getAttribute('src'),
+    cur: i.currentSrc,
+    w: Number(i.getAttribute('width')),
+    nw: i.naturalWidth,
+  })));
+  for (const d of dims) {
+    assert.equal(d.nw, d.w, `${d.src} density-adjusted naturalWidth matches width (${d.nw} vs ${d.w})`);
+    const expected2x = d.src.replace('-1x.webp', '.webp').replace(/^\.\//, '/');
+    assert.ok(d.cur.endsWith(expected2x), `${d.src} loaded 2x candidate (${d.cur} should end with ${expected2x})`);
+  }
+  // top jump links move to their sections
+  for (const [id, label] of [['#story', 'Story'], ['#changes', 'Changes'], ['#thanks', 'Thanks'], ['#support', 'Support']]) {
+    await page.click(`.jump a[href="${id}"]`);
+    assert.equal(await page.evaluate(() => location.hash), id, `${label} jumps to ${id}`);
+  }
+  // support card Venmo button tracks tip_clicked with placement: 'about_page' and stays silent off live domain
+  const venmo = page.locator('#support a.tip-btn');
+  assert.equal((await venmo.textContent()).trim(), 'Venmo @morgan-holland');
+  await venmo.evaluate(a => a.addEventListener('click', e => e.preventDefault()));
+  await venmo.click();
+  const tipEvents = await page.evaluate(() => window.__isoEvents.filter(e => e.event === 'tip_clicked'));
+  assert.deepEqual(tipEvents, [{ event: 'tip_clicked', props: { placement: 'about_page' } }]);
+  assert.equal(await page.evaluate(() => window.posthog), undefined, 'PostHog stays off outside live domain');
+
   const overflow = await page.evaluate(() => document.documentElement.scrollWidth > innerWidth);
   assert.equal(overflow, false);
   await page.setViewportSize({ width: 390, height: 844 });
