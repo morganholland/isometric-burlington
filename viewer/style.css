@@ -14,7 +14,12 @@ html,body{height:100%;margin:0;background:var(--ground);color:var(--ink);font:14
 #map{position:fixed;inset:0;background:radial-gradient(120% 90% at 50% 40%,#3c5a6c,#1d2c36)}
 .leaflet-container{background:transparent;font:inherit}
 .iso-tiles{image-rendering:auto}
-.leaflet-tile-pane{filter:brightness(calc(1 - var(--night)*.55)) saturate(calc(1 - var(--night)*.35));transition:filter .6s}
+.leaflet-tile-pane{filter:brightness(calc((1 - var(--night)*.55) * (1 + var(--snow,0)*.3))) contrast(calc(1 - var(--snow,0)*.2)) saturate(calc((1 - var(--night)*.35) * (1 - var(--snow,0)*.6)));transition:filter .6s}
+/* snow lying on the ground: a cold white lifted over the drawing (it lightens the dark greens and roofs most),
+   in its own pane under the night tint so a snowy night is still night. --snow is 0..1. */
+.leaflet-snow-pane{pointer-events:none;mix-blend-mode:screen}
+body:not(.has-snow) .leaflet-snow-pane{display:none}   /* bare ground costs nothing while panning */
+#snowcover{position:absolute;left:0;top:0;width:100vw;height:100vh;pointer-events:none;background:#b9cad8;opacity:calc(var(--snow,0)*.3);transition:opacity .8s}
 #night{position:absolute;left:0;top:0;width:100vw;height:100vh;pointer-events:none;background:#14234a;mix-blend-mode:multiply;opacity:calc(var(--night)*.55);transition:opacity .6s;z-index:401}
 /* paper: a printed-map grain over the drawing. It fades in as you zoom past the drawing's own
    resolution, so enlarged pixels read as ink on paper rather than a blurry photo. --paper is 0..1, set from the zoom. */
@@ -25,7 +30,7 @@ html,body{height:100%;margin:0;background:var(--ground);color:var(--ink);font:14
 .leaflet-ink-pane{pointer-events:none}
 #lights{position:absolute;left:0;top:0;width:100vw;height:100vh;pointer-events:none;transition:opacity .6s}
 .leaflet-glow-pane{pointer-events:none;mix-blend-mode:screen}
-#cars,#buses,#planes{position:fixed;inset:0;width:100%;height:100%;pointer-events:none;z-index:401}
+#cars,#buses,#moments,#planes{position:fixed;inset:0;width:100%;height:100%;pointer-events:none;z-index:401}
 #bus-tip{position:fixed;display:flex;gap:9px;align-items:flex-start;padding:8px 11px;font-size:12.5px;pointer-events:none;max-width:240px}
 #bus-tip .sw{width:10px;height:10px;border-radius:3px;margin-top:4px;flex:none}
 #bus-tip .long,#bus-tip .until{color:var(--muted)}

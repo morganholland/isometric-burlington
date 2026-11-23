@@ -1,9 +1,16 @@
 // Share a link to exactly this view, and save a picture of it.
 
 // The address of a view. `time` is 'live', 'day' or 'night': a forced time of day travels with the link,
-// so a night view opens as night.
-export function viewHash({ angle, x, y, zoom, time }) {
-  return `#a=${angle}&x=${Math.round(x)}&y=${Math.round(y)}&z=${zoom}` + (time === 'day' || time === 'night' ? `&t=${time}` : '');
+// so a night view opens as night. `moment` ('fireworks', 'champ' or 'holiday') asks for a local moment on any day.
+const MOMENTS = ['fireworks', 'champ', 'holiday'];
+export function viewHash({ angle, x, y, zoom, time, moment }) {
+  return `#a=${angle}&x=${Math.round(x)}&y=${Math.round(y)}&z=${zoom}` + (time === 'day' || time === 'night' ? `&t=${time}` : '')
+    + (MOMENTS.includes(moment) ? `&m=${moment}` : '');
+}
+// the moment a link asks for, with or without a view in it
+export function readMoment(hash) {
+  const m = new URLSearchParams(String(hash).replace(/^#/, '')).get('m');
+  return MOMENTS.includes(m) ? m : null;
 }
 export function readViewHash(hash) {
   const p = new URLSearchParams(String(hash).replace(/^#/, ''));
@@ -37,7 +44,7 @@ const lerp = (a, b, t) => Math.round(a + (b - a) * t);
 // buttons. `tiles` are the drawing's tiles on screen ({src, x, y, w, h} in CSS pixels); they are fetched
 // through `tileUrl(src)`, which must give a same-site address (a canvas cannot be saved once it holds an
 // image from another site). `layers` are the map's canvases, bottom first: [{canvas, blend}].
-export async function snapshot({ width, height, tiles, tileUrl, night, layers, caption, scale = Math.min(2, devicePixelRatio || 1) }) {
+export async function snapshot({ width, height, tiles, tileUrl, night, snow = 0, layers, caption, scale = Math.min(2, devicePixelRatio || 1) }) {
   const c = document.createElement('canvas');
   c.width = Math.round(width * scale); c.height = Math.round(height * scale);
   const ctx = c.getContext('2d');
@@ -54,6 +61,18 @@ export async function snapshot({ width, height, tiles, tileUrl, night, layers, c
   let drawn = 0;
   tiles.map((t, i) => [t, bmps[i]]).filter(p => p[1]).sort((p, q) => q[0].w - p[0].w)     // coarser tiles underneath
     .forEach(([t, bmp]) => { ctx.drawImage(bmp, t.x, t.y, t.w, t.h); drawn++; });
+  if (snow > 0.01) {
+    // snow lying on the ground, as the page does it (style.css): the drawing brightened, flattened and
+    // drained of colour, then a cold white screened over it
+    const copy = document.createElement('canvas'); copy.width = c.width; copy.height = c.height;
+    copy.getContext('2d').drawImage(c, 0, 0);
+    ctx.filter = `brightness(${1 + snow * 0.3}) contrast(${1 - snow * 0.2}) saturate(${1 - snow * 0.6})`;   // ignored where unsupported
+    ctx.drawImage(copy, 0, 0, width, height);
+    ctx.filter = 'none';
+    ctx.globalCompositeOperation = 'screen'; ctx.globalAlpha = snow * 0.3;
+    ctx.fillStyle = '#b9cad8'; ctx.fillRect(0, 0, width, height);
+    ctx.globalCompositeOperation = 'source-over'; ctx.globalAlpha = 1;
+  }
   if (night > 0.01) {
     // the same dimming the page does with CSS: darker, then a blue tint multiplied over
     ctx.globalCompositeOperation = 'multiply';

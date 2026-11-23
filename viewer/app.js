@@ -9,7 +9,8 @@ import { LabelLayer } from './labels.js';
 import { CarLayer } from './traffic.js';
 import { LightLayer, litShare } from './lights.js';
 import { burlingtonClock } from './transit.js';
-import { viewHash, readViewHash, shareLink, snapshot, deliver } from './share.js';
+import { viewHash, readViewHash, readMoment, shareLink, snapshot, deliver } from './share.js';
+import { MomentLayer, groundSnow, fetchSnowDepth, FW_SITE, CHAMP_SPOTS } from './moments.js';
 import { initTracking, track } from './track.js';
 
 initTracking();
@@ -20,7 +21,7 @@ const $ = s => document.querySelector(s);
 
 const state = {
   angle: 0, manifest: null, layer: null, outline: null,
-  timeMode: 'live', weatherMode: 'live', weather: null, marker: null,
+  timeMode: 'live', weatherMode: 'live', weather: null, marker: null, snowDepth: null, moment: null,
 };
 
 // ---------- map ----------
@@ -35,16 +36,18 @@ const map = L.map('map', {
 
 // the paper grain and night tint sit just over the drawing, the names above them, and the place pins
 // (Leaflet's marker pane, 600) on top of all three
+map.createPane('snow').style.zIndex = 240;   // snow lying on the ground: lightens the drawing, under the night tint
 map.createPane('tint').style.zIndex = 250;
 map.createPane('glow').style.zIndex = 300;   // what is lit at night: over the tint, under the names
 map.createPane('ink').style.zIndex = 450;
+map.getPane('snow').append($('#snowcover'));
 map.getPane('tint').append($('#paper'), $('#night'));
 map.getPane('glow').append($('#lights'));
 map.getPane('ink').append($('#labels'));
 // Leaflet moves its panes while dragging; keep the tint fixed to the screen
 function pinTint() {
   const p = map.containerPointToLayerPoint([0, 0]);
-  map.getPane('tint').style.transform = `translate3d(${p.x}px,${p.y}px,0)`;
+  map.getPane('tint').style.transform = map.getPane('snow').style.transform = `translate3d(${p.x}px,${p.y}px,0)`;
 }
 map.on('move zoomend viewreset resize', pinTint);
 
@@ -103,7 +106,7 @@ function rotate(dir) {
 function saveHash() {
   if (!map._loaded) return;
   const [x, y] = toPx(map.getCenter());
-  history.replaceState(null, '', viewHash({ angle: state.angle, x, y, zoom: map.getZoom(), time: state.timeMode }));
+  history.replaceState(null, '', viewHash({ angle: state.angle, x, y, zoom: map.getZoom(), time: state.timeMode, moment: state.moment }));
 }
 const readHash = () => readViewHash(location.hash);
 map.on('moveend', saveHash);
@@ -265,18 +268,23 @@ labels.reserved = placeBoxes;
 fetch('labels.json').then(r => r.ok ? r.json() : Promise.reject(new Error(`labels ${r.status}`))).then(d => {
   labels.skip = new Set((d.places || []).map(p => p[0]));
   labels.use(d);
+  moments.useStreets(d.streets || []);
   if (d.places) setupPlaces(d);
 }).catch(() => { labels.data = null; });
 const buses = new BusLayer($('#buses'), map, toLL, () => state.angle, (x, y) => inRegion(state.angle, x, y));
 buses.load('transit.json').catch(() => { buses.data = null; });
 const planes = new PlaneLayer($('#planes'), map, toLL, () => state.angle);
 const cars = new CarLayer($('#cars'), map, toLL, () => state.angle, (x, y) => inRegion(state.angle, x, y));
+const moments = new MomentLayer($('#moments'), map, toLL, () => state.angle, (x, y) => inRegion(state.angle, x, y));
+const momentsSeen = new Set();
+moments.onShown = k => { if (!momentsSeen.has(k)) { momentsSeen.add(k); track('moment_shown', { moment: k, asked: state.moment === k }); } };
 const lights = new LightLayer($('#lights'), map, toLL, () => state.angle, (x, y) => inRegion(state.angle, x, y));
 $('#show-cars').checked = cars.on;
 let tipAt = null, tipBus = null;
 function showTip() {
   const tip = $('#bus-tip');
   let d = tipAt && planes.on && planes.hit(tipAt.x, tipAt.y), layer = planes, key = d && d.a.id;
+  if (!d) { d = tipAt && moments.on && moments.hit(tipAt.x, tipAt.y); layer = moments; key = d && 'champ'; }
   if (!d) { d = tipAt && buses.on && buses.data && buses.hit(tipAt.x, tipAt.y); layer = buses; key = d && d.b.trip; }
   if (!d) { tip.hidden = true; tipBus = null; return false; }
   if (key !== tipBus) {                         // rewrite the text only when what is under the pointer changes
@@ -296,7 +304,9 @@ function showTip() {
   return true;
 }
 function busTip(e) { tipAt = e.containerPoint; showTip(); }
-buses.onFrame = () => { if (tipAt && !$('#bus-tip').hidden) showTip(); };
+map.on('click', e => { if (moments.on && moments.hit(e.containerPoint.x, e.containerPoint.y)) track('champ_tapped'); });
+// keep an open tip following what it describes (and gone once that is: Champ dives), whichever layer is on
+buses.onFrame = moments.onFrame = () => { if (tipAt && !$('#bus-tip').hidden) showTip(); };
 map.on('mousemove', busTip);
 map.on('click', busTip);
 map.on('mouseout', () => { tipAt = null; $('#bus-tip').hidden = true; });
@@ -304,23 +314,36 @@ map.on('movestart zoomstart', () => { tipAt = null; $('#bus-tip').hidden = true;
 $('#show-labels').addEventListener('change', e => { labels.on = e.target.checked; labels.draw(); });
 $('#show-buses').addEventListener('change', e => { buses.on = e.target.checked; if (!buses.on) $('#bus-tip').hidden = true; });
 $('#show-planes').addEventListener('change', e => { planes.on = e.target.checked; if (!planes.on) $('#bus-tip').hidden = true; });
+$('#show-moments').checked = moments.on;
+$('#show-moments').addEventListener('change', e => { moments.on = e.target.checked; if (!moments.on) { $('#bus-tip').hidden = true; forgetMoment(); } });
+// a moment a link asked for lasts until the visitor changes the time of day or switches moments off
+function forgetMoment() { if (state.moment) { state.moment = moments.forced = null; saveHash(); } }
 $('#show-cars').addEventListener('change', e => { cars.on = e.target.checked; cars.aim(); track('cars_toggled', { on: cars.on }); });
 function applySky() {
   const live = nightFactor();
   const night = state.timeMode === 'day' ? 0 : state.timeMode === 'night' ? 1 : live;
   document.documentElement.style.setProperty('--night', night.toFixed(3));
   document.body.classList.toggle('is-night', night > 0.5);
-  buses.night = night; planes.night = night; cars.night = night; labels.night = night; labels.draw();
+  buses.night = night; planes.night = night; cars.night = night; moments.night = night; labels.night = night; labels.draw();
   // in the small hours most windows are dark; a forced night is always an evening
   lights.set(night, state.timeMode === 'night' ? 1 : litShare(burlingtonClock().s / 3600));
   const w = state.weatherMode === 'live' ? (state.weather || { kind: 'clear' }) : { kind: state.weatherMode, heavy: false, windMph: 8, windFromDeg: 300 };
   fx.set(w.kind, w.heavy, w.windMph, w.windFromDeg, GRID.headings[state.angle]);
+  const snow = groundSnow(state.weatherMode, state.snowDepth, (state.weather?.kind) === 'snow');
+  document.documentElement.style.setProperty('--snow', snow.toFixed(3));
+  document.body.classList.toggle('has-snow', snow > 0);
   const t = new Date().toLocaleTimeString('en-US', { timeZone: 'America/New_York', hour: 'numeric', minute: '2-digit' });
   const ww = state.weather;
-  $('#status').textContent = `Burlington ${t}` + (ww ? ` · ${ww.tempF != null ? ww.tempF + '°F ' : ''}${ww.text.toLowerCase()}` : '');
+  const inches = state.weatherMode === 'live' && state.snowDepth != null && state.snowDepth >= 0.01 ? Math.round(state.snowDepth * 39.37) : 0;
+  $('#status').textContent = `Burlington ${t}` + (ww ? ` · ${ww.tempF != null ? ww.tempF + '°F ' : ''}${ww.text.toLowerCase()}` : '')
+    + (inches ? ` · ${inches}″ of snow on the ground` : '');
 }
 async function refreshWeather() {
-  try { state.weather = await fetchWeather(); } catch { /* keep last */ }
+  // each is shown as soon as it is in: one slow service does not hold up the other
+  await Promise.all([
+    fetchWeather().then(w => { state.weather = w; applySky(); }).catch(() => { /* keep last */ }),
+    fetchSnowDepth().then(d => { state.snowDepth = d; applySky(); }).catch(() => { /* keep last */ }),
+  ]);
   applySky();
 }
 setInterval(applySky, 30000);
@@ -332,7 +355,7 @@ $('#rot-right').addEventListener('click', () => rotate(1));
 $('#zoom-in').addEventListener('click', () => map.zoomIn());
 $('#zoom-out').addEventListener('click', () => map.zoomOut());
 $('#layers-btn').addEventListener('click', () => { const p = $('#layers'); p.hidden = !p.hidden; $('#layers-btn').setAttribute('aria-expanded', String(!p.hidden)); if (!p.hidden) { $('#places-list').hidden = true; $('#places-btn').setAttribute('aria-expanded', 'false'); } });
-document.querySelectorAll('input[name=time]').forEach(i => i.addEventListener('change', () => { state.timeMode = i.value; applySky(); saveHash(); }));
+document.querySelectorAll('input[name=time]').forEach(i => i.addEventListener('change', () => { state.timeMode = i.value; forgetMoment(); applySky(); saveHash(); }));
 document.querySelectorAll('input[name=wx]').forEach(i => i.addEventListener('change', () => { state.weatherMode = i.value; applySky(); }));
 // ---------- share a link to this view, save a picture of it ----------
 let toastTimer;
@@ -362,11 +385,11 @@ async function takeSnapshot() {
   try {
     const night = +getComputedStyle(document.documentElement).getPropertyValue('--night') || 0;
     const { blob, drawn, asked } = await snapshot({
-      width: innerWidth, height: innerHeight, night, caption: 'isoburlington.com',
+      width: innerWidth, height: innerHeight, night, snow: document.body.classList.contains('has-snow') ? +getComputedStyle(document.documentElement).getPropertyValue('--snow') || 0 : 0, caption: 'isoburlington.com',
       tiles: tilesOnScreen(), tileUrl: src => (TILE_BASE && src.startsWith(TILE_BASE) ? 'tiles' + src.slice(TILE_BASE.length) : src),
       layers: [
         { canvas: $('#lights'), blend: 'screen', alpha: +$('#lights').style.opacity || 0 },
-        { canvas: $('#labels') }, { canvas: $('#cars') }, { canvas: $('#buses') }, { canvas: $('#planes') }, { canvas: $('#fx') },
+        { canvas: $('#labels') }, { canvas: $('#cars') }, { canvas: $('#buses') }, { canvas: $('#moments') }, { canvas: $('#planes') }, { canvas: $('#fx') },
       ],
     });
     if (!blob || (asked && !drawn)) throw new Error('no picture');   // never save a picture with no map in it
@@ -438,13 +461,18 @@ async function loadManifest() {
   $('#drawing').hidden = !!any;
   const h = readHash();
   if (h && h.t !== 'live') { state.timeMode = h.t; document.querySelector(`input[name=time][value=${h.t}]`).checked = true; }
+  // a link can ask for a local moment; fireworks and the holiday lights are night things
+  state.moment = moments.forced = readMoment(location.hash);
+  if (state.moment && !moments.on) { moments.on = true; $('#show-moments').checked = true; }   // asked for by name: show it, still
+  if (state.moment && state.moment !== 'champ' && !(h && h.t !== 'live')) { state.timeMode = 'night'; $('input[name=time][value=night]').checked = true; }
   if (h) showAngle(h.a, [h.x, h.y], h.z);
   else {
     showAngle(0, null);
-    // open on downtown and the waterfront
+    // open on downtown and the waterfront, or on the moment a link asks for
     if (any) {
-      const [x, y] = latLonToPx(0, 44.4759, -73.2160, 32);
-      map.setView(toLL(x, y), -2.5, { animate: false });
+      const [lat, lon, u, z] = state.moment === 'fireworks' ? [...FW_SITE, 200, -1.75] : state.moment === 'champ' ? [...CHAMP_SPOTS[0], 0, -1.25] : [44.4759, -73.2160, 32, -2.5];
+      const [x, y] = latLonToPx(0, lat, lon, u);
+      map.setView(toLL(x, y), z, { animate: false });
     } else {
       map.fitBounds(L.latLngBounds(grid.angles[0].region.map(([x, y]) => toLL(x, y))), { padding: [40, 40], animate: false });
     }
@@ -453,5 +481,5 @@ async function loadManifest() {
   refreshWeather();
   const st = sunTimes();
   $('#sun').textContent = `Sunset ${st.sunset.toLocaleTimeString('en-US', { timeZone: 'America/New_York', hour: 'numeric', minute: '2-digit' })}`;
-  window.__iso = { map, state, rotate, goTo, toPx, buses, planes, cars, lights, labels, places, openPlace, showAbout, takeSnapshot, snapshot };
+  window.__iso = { map, state, rotate, goTo, toPx, buses, planes, cars, lights, labels, moments, places, openPlace, showAbout, takeSnapshot, snapshot, applySky };
 })();

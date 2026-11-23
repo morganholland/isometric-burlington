@@ -27,3 +27,24 @@
   hand-picked cases would not have.
 - The local environment needs `ln -s /opt/node-tools/node_modules/playwright node_modules/playwright` and
   `pip install shapely pyproj` before `npm test`.
+
+## Things that move in world units (fireworks, Champ, holiday lights)
+- **Leaflet rounds screen points to whole pixels.** Working out the screen size of one metre from two points a
+  metre apart gives 0 or 1. Measure each axis over a kilometre and divide (`basis()` in `viewer/moments.js`).
+- **Real sizes vanish when zoomed out.** A 60 m firework burst is a few pixels at the opening zoom. Draw such
+  things at a minimum screen size around their centre, and say in the code that it is deliberate.
+- **Height pushes things over the land.** In this 30-degree view a point 200 m up is drawn well above the shore,
+  so fireworks launched on the lake burst over Battery Park. That is correct for the camera, not a bug.
+- **A canvas change applies after both feeds answer if they share one `await`.** Apply each weather feed as it
+  arrives, or a slow NWS answer holds up the snow.
+- **CSS transitions make computed opacity lag.** A test reading an element's opacity right after a change sees
+  the start of the fade; wait for the value.
+- **A layer near the bottom of the screen can sit under the first-visit hint card.** Tests that click on the
+  map should dismiss the hint and pan the target to the middle first.
+
+## Testing with the real drawing
+- Building with `TILE_BASE=https://pub-9c551c98dab048f484c2c7e896e92cc0.r2.dev ./build_site.sh` puts the real
+  tiles in local screenshots, which is the only way to judge how an overlay looks. Two existing tests (cars at
+  rush hour, snapshot) fail in that mode on main too; CI builds without tiles, so run the suite that way.
+- Open-Meteo's free API is limited per address per day and the cloud container's address is often over it.
+  Tests answer for it with `page.route`.

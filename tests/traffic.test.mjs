@@ -3,7 +3,7 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { trafficLevel, buildGraph, laneAt, isRed, isHidden, Traffic } from '../viewer/traffic.js';
 import { litShare } from '../viewer/lights.js';
-import { viewHash, readViewHash } from '../viewer/share.js';
+import { viewHash, readViewHash, readMoment } from '../viewer/share.js';
 
 // a small seeded random source, so a failure can be replayed
 function rng(seed) { let s = seed >>> 0; return () => { s = (s + 0x6D2B79F5) >>> 0; let t = Math.imul(s ^ s >>> 15, 1 | s); t = t + Math.imul(t ^ t >>> 7, 61 | t) ^ t; return ((t ^ t >>> 14) >>> 0) / 4294967296; }; }
@@ -138,4 +138,9 @@ test('a shared link opens the same view', () => {
   // a mangled link still opens somewhere sensible
   assert.deepEqual(readViewHash('#a=9&x=abc&y=5&z=99&t=dusk'), { a: 1, x: 0, y: 5, z: 3, t: 'live' });
   assert.deepEqual(readViewHash('#a=-1&x=1&y=2&z=-40'), { a: 3, x: 1, y: 2, z: -6.5, t: 'live' });
+  // a local moment travels with the link, and only a known one
+  for (const m of ['fireworks', 'champ', 'holiday']) assert.equal(readMoment(viewHash({ angle: 0, x: 1, y: 2, zoom: -1, time: 'live', moment: m })), m);
+  assert.equal(readMoment('#m=fireworks'), 'fireworks');
+  assert.equal(readMoment('#a=0&x=1&y=2&z=0&m=<script>'), null);
+  assert.equal(viewHash({ angle: 0, x: 1, y: 2, zoom: 0, time: 'live', moment: 'nope' }), '#a=0&x=1&y=2&z=0');
 });

@@ -16,20 +16,23 @@ before(async () => {
 });
 after(async () => { await browser?.close(); server?.kill(); });
 
-async function open(ctxOpts) {
+async function open(opts) {
+  const { snowDepth, hash, ...ctxOpts } = opts;
   const ctx = await browser.newContext(ctxOpts);
   const page = await ctx.newPage();
   const errors = [];
   page.on('pageerror', e => errors.push(e.message));
   // a failed load is judged by its URL (the console message has none): only outside services and the
   // manifest (absent until a view is tiled) may fail
-  page.on('console', m => { if (m.type() === 'error' && !/api\.weather\.gov|nominatim|manifest|Failed to load resource/.test(m.text())) errors.push(m.text()); });
-  page.on('response', r => { if (r.status() >= 400 && !/api\.weather\.gov|nominatim|manifest\.json|\.webp$/.test(r.url())) errors.push(`${r.status()} ${r.url()}`); });
+  page.on('console', m => { if (m.type() === 'error' && !/api\.weather\.gov|open-meteo|nominatim|manifest|Failed to load resource/.test(m.text())) errors.push(m.text()); });
+  page.on('response', r => { if (r.status() >= 400 && !/api\.weather\.gov|open-meteo|nominatim|manifest\.json|\.webp$/.test(r.url())) errors.push(`${r.status()} ${r.url()}`); });
   // live flights come from a serverless function the static test server does not have: answer for it
   await page.route('**/api/flights', r => r.fulfill({ json: { now: Date.now(), ac: [
     { id: 'a1b2c3', flight: 'JBU1234', type: 'A320', lat: 44.4759, lon: -73.2121, altFt: 3000, ground: false, gs: 160, track: 15, vr: -700, age: 1 },
   ] } }));
-  await page.goto(URL0);
+  // snow lying at BTV (Open-Meteo): none unless a test says otherwise
+  await page.route('**/api.open-meteo.com/**', r => r.fulfill({ json: { current: { snow_depth: snowDepth ?? 0 } } }));
+  await page.goto(URL0 + (hash || ''));
   await page.waitForFunction(() => window.__iso);
   return { ctx, page, errors };
 }
@@ -378,10 +381,18 @@ test('cars drive the streets when you are close, more at rush hour, and can be s
   await ctx.close();
 });
 
-test('people who ask for less motion start without cars', async () => {
+test('people who ask for less motion start without cars or moments; a fireworks link shows them held still', async () => {
   const { ctx, page, errors } = await open({ viewport: { width: 1400, height: 880 }, reducedMotion: 'reduce' });
   assert.equal(await page.isChecked('#show-cars'), false);
   assert.equal(await page.evaluate(() => window.__iso.cars.on), false);
+  assert.equal(await page.isChecked('#show-moments'), false);
+  assert.equal(await page.evaluate(() => window.__iso.moments.on), false);
+  await page.goto(URL0 + '#m=fireworks'); await page.reload(); await page.waitForFunction(() => window.__iso);
+  await page.waitForFunction(() => window.__iso.moments.drawn.fireworks > 0, null, { timeout: 8000 });
+  const where = () => page.evaluate(() => window.__iso.moments.sparks.slice(0, 20).map(p => [p.e, p.n, p.u, p.life]));
+  const a = await where(); await page.waitForTimeout(800); const b = await where();
+  assert.deepEqual(a, b, 'nothing moves or fades');
+  assert.equal(await page.evaluate(() => window.__iso.moments.shells.length), 0, 'nothing launches');
   assert.deepEqual(errors, []);
   await ctx.close();
 });
@@ -487,6 +498,115 @@ test('the map still works when the street and lights files cannot be had; a pict
     return { drawn: s.drawn, asked: s.asked };
   });
   assert.deepEqual(r, { drawn: 0, asked: 1 });
+  assert.deepEqual(errors, []);
+  await ctx.close();
+});
+
+const snowVar = page => page.evaluate(() => +getComputedStyle(document.documentElement).getPropertyValue('--snow'));
+
+test('snow lying at BTV turns the map white; bare ground leaves it be; the Weather choice wins', async () => {
+  {
+    const { ctx, page, errors } = await open({ viewport: { width: 1200, height: 800 }, snowDepth: 0.2 });
+    // the weather is applied once both BTV's observation and the snow depth are in (or have failed)
+    await page.waitForFunction(() => +getComputedStyle(document.documentElement).getPropertyValue('--snow') === 1, null, { timeout: 15000 });
+    assert.match(await page.textContent('#status'), /8″ of snow on the ground/);
+    await page.waitForFunction(() => +getComputedStyle(document.querySelector('#snowcover')).opacity > 0.28, null, { timeout: 3000 });   // the white wash is up
+    if (SHOTS) await page.screenshot({ path: `${SHOTS}/snow-on-ground.png` });
+    await page.click('#layers-btn');
+    await page.check('input[name=wx][value=clear]');
+    assert.equal(await snowVar(page), 0, 'choosing Clear clears the ground');
+    assert.deepEqual(errors, []);
+    await ctx.close();
+  }
+  {
+    const { ctx, page, errors } = await open({ viewport: { width: 1200, height: 800 }, snowDepth: 0 });
+    await page.waitForFunction(() => window.__iso.state.snowDepth === 0 && getComputedStyle(document.documentElement).getPropertyValue('--snow') !== '');
+    await page.waitForTimeout(300);
+    assert.equal(await snowVar(page), 0);
+    assert.doesNotMatch(await page.textContent('#status'), /snow on the ground/);
+    await page.click('#layers-btn');
+    await page.check('input[name=wx][value=snow]');
+    assert.equal(await snowVar(page), 1, 'choosing Snow whitens it');
+    assert.match(await page.textContent('#about'), /Open-Meteo/);
+    assert.deepEqual(errors, []);
+    await ctx.close();
+  }
+});
+
+test('a fireworks link opens at night with fireworks over the waterfront, and keeps the moment when shared', async () => {
+  const { ctx, page, errors } = await open({ viewport: { width: 1400, height: 880 }, hash: '#m=fireworks' });
+  assert.equal(await page.evaluate(() => getComputedStyle(document.documentElement).getPropertyValue('--night').trim()), '1.000');
+  await page.waitForFunction(() => window.__iso.moments.drawn.fireworks > 20, null, { timeout: 8000 });
+  if (SHOTS) { await page.waitForTimeout(1500); await page.screenshot({ path: `${SHOTS}/fireworks.png` }); }
+  await page.evaluate(() => window.__iso.map.panBy([10, 0], { animate: false }));
+  await page.waitForTimeout(300);
+  assert.match(page.url(), /&m=fireworks/);
+  // choosing day puts them out and the moment no longer travels with the link
+  await page.click('#layers-btn');
+  await page.check('input[name=time][value=day]');
+  await page.waitForTimeout(300);
+  assert.equal(await page.evaluate(() => window.__iso.moments.drawn.fireworks), 0);
+  assert.doesNotMatch(page.url(), /&m=/);
+  await page.check('input[name=time][value=night]');
+  await page.click('#layers-btn');
+  // switched off, nothing is drawn
+  await page.click('#layers-btn');
+  await page.uncheck('#show-moments');
+  await page.waitForTimeout(200);
+  assert.equal(await page.evaluate(() => window.__iso.moments.drawn.fireworks), 0);
+  assert.deepEqual(errors, []);
+  await ctx.close();
+});
+
+test('no fireworks on an ordinary evening; holiday lights on Church Street in season', async () => {
+  const { ctx, page, errors } = await open({ viewport: { width: 1400, height: 880 } });
+  await page.waitForFunction(() => window.__iso.moments.bulbs);
+  await page.evaluate(() => {
+    const m = window.__iso.moments; m.offsetMs = Date.parse('2026-11-10T23:30:00Z') - Date.now();   // 6:30 pm, before the season
+    window.__iso.state.timeMode = 'night'; window.__iso.applySky();
+    window.__iso.map.stop(); window.__iso.goTo(44.4785, -73.2127, 'Church Street');
+  });
+  await page.waitForTimeout(1600);
+  await page.evaluate(() => window.__iso.map.setZoom(-1, { animate: false }));
+  await page.waitForTimeout(400);
+  assert.equal(await page.evaluate(() => window.__iso.moments.drawn.fireworks), 0);
+  assert.equal(await page.evaluate(() => window.__iso.moments.drawn.holiday), 0, 'no lights before the season');
+  await page.evaluate(() => { window.__iso.moments.offsetMs = Date.parse('2026-12-12T23:30:00Z') - Date.now(); });
+  await page.waitForFunction(() => window.__iso.moments.drawn.holiday > 30, null, { timeout: 4000 });
+  if (SHOTS) await page.screenshot({ path: `${SHOTS}/holiday-lights.png` });
+  // by day the season's lights are off
+  await page.evaluate(() => { window.__iso.state.timeMode = 'day'; window.__iso.applySky(); });
+  await page.waitForTimeout(300);
+  assert.equal(await page.evaluate(() => window.__iso.moments.drawn.holiday), 0);
+  assert.deepEqual(errors, []);
+  await ctx.close();
+});
+
+test('Champ surfaces in the lake and says it is a legend when tapped', async () => {
+  const { ctx, page, errors } = await open({ viewport: { width: 1400, height: 880 }, hash: '#m=champ' });
+  await page.waitForFunction(() => window.__iso.moments.champBox, null, { timeout: 8000 });
+  if (await page.isVisible('#hint')) await page.click('#hint-ok');
+  // bring it to the middle of the screen, clear of the cards
+  await page.evaluate(() => {
+    const b = window.__iso.moments.champBox, m = window.__iso.map;
+    m.panBy([(b.x0 + b.x1) / 2 - innerWidth / 2, (b.y0 + b.y1) / 2 - innerHeight / 2], { animate: false });
+  });
+  await page.waitForTimeout(300);
+  const b = await page.evaluate(() => window.__iso.moments.champBox);
+  if (SHOTS) await page.screenshot({ path: `${SHOTS}/champ.png`, clip: { x: b.x0 - 150, y: b.y0 - 100, width: b.x1 - b.x0 + 300, height: b.y1 - b.y0 + 200 } });
+  await page.mouse.click((b.x0 + b.x1) / 2, (b.y0 + b.y1) / 2);
+  await page.waitForSelector('#bus-tip:not([hidden])');
+  assert.match(await page.textContent('#bus-tip'), /Champ/);
+  assert.match(await page.textContent('#bus-tip'), /legend/);
+  // with the buses switched off too, the tip still goes once Champ has dived
+  await page.evaluate(() => { window.__iso.buses.on = false; window.__iso.moments.forced = null; window.__iso.moments.offsetMs = 0; });
+  await page.evaluate(() => { const m = window.__iso.moments; m.active = () => ({ fireworks: false, holiday: false, champ: null }); });
+  await page.waitForSelector('#bus-tip', { state: 'hidden', timeout: 3000 });
+  await page.evaluate(() => { delete window.__iso.moments.active; window.__iso.moments.forced = 'champ'; window.__iso.buses.on = true; });
+  if (SHOTS) await page.screenshot({ path: `${SHOTS}/champ-tip.png` });
+  // it turns with the map and is still in the lake
+  await page.click('#rot-right');
+  await page.waitForFunction(() => window.__iso.moments.champBox, null, { timeout: 4000 });
   assert.deepEqual(errors, []);
   await ctx.close();
 });
