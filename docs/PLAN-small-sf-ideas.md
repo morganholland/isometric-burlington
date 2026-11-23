@@ -5,7 +5,8 @@
 - Reading the code showed the map already has live weather (NWS at BTV, with snow, rain and fog), live planes
   (ADS-B), GMT buses on the timetable, a "How it was made" page and a tip jar. The list below is what is new.
 - Morgan said yes to every recommended answer (2026-11-23).
-- Slice 1 (snow on the ground, fireworks, Champ, holiday lights): built and tested, PR #4.
+- Slice 1 (snow on the ground, fireworks, Champ, holiday lights): live on isoburlington.com since 2026-11-23 (PR #4).
+- Slice 2 (About page: numbers, change log, drag-to-compare): built and tested, PR #5.
 - Slice 7 (live buses) waits on a free Swiftly key only Morgan can request: see `OWED.md`.
 - Rules: spend nothing, free feeds only, never cap zoom, say plainly on the site what is simulated or timetabled.
 
@@ -21,8 +22,11 @@ Each slice is its own small pull request, merged when its tests are green and it
 6. Moments obey "reduce motion", cost nothing while off screen, and the About text says they are for fun.
 
 ## Slice 2: About page
-7. A row of honest numbers (blocks drawn, pixels, streets, lamps), a change log whose entries link to the spot
-   they are about, and a drag-to-compare picture of Google's model against the drawing.
+7. A row of honest numbers (blocks drawn, area, cm per pixel, streets, lamps, bus routes), a change log whose
+   entries link to the spot they are about, and a drag-to-compare picture of Google's model against the drawing.
+   Tests: `tests/about.test.mjs` recomputes every number from the data and checks every change-log link lands
+   inside the drawn map; `tests/viewer.test.mjs` drags the compare slider and follows a change-log link.
+   The compare pair is render block a0/0_0 and the same pixels of the drawn tiles, cropped to 2560×1600 and scaled to 1600×1000.
 
 ## Slice 3: corrections
 8. "Tell me what's wrong here" on the map and on the About page sends a short note with the map position.
