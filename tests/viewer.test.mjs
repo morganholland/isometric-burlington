@@ -433,7 +433,11 @@ test('visitor lists: a link shows the list, apart from the map\'s own places', a
   assert.equal(await page.locator('.vpin').count(), 2, 'a numbered pin for each spot');
   assert.equal(await page.locator('.vpin.place-pin, .place-pin .vpin').count(), 0, "visitors' pins are not the map's own");
   // both spots are on screen: the map opened to fit the list
-  for (const b of await page.locator('.vpin').all()) { const r = await b.boundingBox(); assert.ok(r.x > 0 && r.x < 1280 && r.y > 0 && r.y < 820); }
+  const card = await page.locator('#vlist').boundingBox();
+  for (const b of await page.locator('.vpin').all()) {
+    const r = await b.boundingBox();
+    assert.ok(r.x > card.x + card.width && r.x + r.width < 1280 && r.y > 0 && r.y + r.height < 820, `pin ${JSON.stringify(r)} clear of the card`);
+  }
   await page.click('#vlist ol li:nth-child(2) button');
   assert.ok(await page.isVisible('#vlist ol li:nth-child(2) .vnote'));
   assert.equal(await page.textContent('#vlist ol li:nth-child(2) .vnote'), 'Eat by the lake.');
@@ -451,6 +455,7 @@ test('visitor lists: a link shows the list, apart from the map\'s own places', a
   await page.goto(URL0 + '#l=eyJ0Ijoi');
   await page.reload(); await page.waitForFunction(() => window.__iso);
   assert.ok(await page.isHidden('#vlist'));
+  assert.match(await page.textContent('#toast'), /cut short/, 'and says so');
   assert.deepEqual(errors, []);
   await ctx.close();
 });
@@ -463,6 +468,12 @@ test('visitor lists: make one from the ★ panel, and its link opens the same li
   await page.click('#mk-open');
   assert.ok(await page.isVisible('#mklist') && await page.isVisible('#fix-aim'), 'the builder and a crosshair');
   assert.ok(await page.isDisabled('#mk-link'), 'nothing to share yet');
+  // typed for real, key by key: r, R, [, ], / and ? are map shortcuts everywhere else
+  await page.click('#mk-title');
+  await page.keyboard.type('A short walk / bar crawl? R[]');
+  assert.equal(await page.inputValue('#mk-title'), 'A short walk / bar crawl? R[]');
+  assert.equal(await page.evaluate(() => window.__iso.state.angle), 0, 'typing does not turn the map');
+  assert.ok(await page.isVisible('#mklist') && await page.isHidden('#about'), 'or open About');
   await page.fill('#mk-title', 'A short walk');
   await page.fill('#mk-by', 'Sam');
   await page.fill('#mk-spot', 'First stop');
@@ -481,15 +492,30 @@ test('visitor lists: make one from the ★ panel, and its link opens the same li
   await page.setViewportSize({ width: 390, height: 664 });
   const card = await page.locator('#mklist').boundingBox(), aim = await page.locator('#fix-aim').boundingBox();
   assert.ok(card.y > aim.y + aim.height, `maker ${Math.round(card.y)} below crosshair ${Math.round(aim.y + aim.height)}`);
-  assert.match(url, /^http.*#a=0&.*&l=[A-Za-z0-9_-]+$/);
+  assert.match(url, /^http.*#a=0&l=[A-Za-z0-9_-]+$/, 'no view in the link, so it opens fitted to the list');
   const ev = await page.evaluate(() => window.__isoEvents.filter(e => e.event === 'list_shared').map(e => e.props));
   assert.deepEqual(ev, [{ items: 2 }]);
+  // opened on a phone: every pin on screen and clear of the list's sheet
   const p2 = await ctx.newPage();
+  await p2.setViewportSize({ width: 390, height: 664 });
   await p2.goto(url); await p2.waitForSelector('#vlist', { state: 'visible' });
+  await p2.waitForFunction(() => document.querySelectorAll('.vpin').length === 2);
+  const sheet = await p2.locator('#vlist').boundingBox();
+  const search = await p2.locator('#q').boundingBox();
+  for (const b of await p2.locator('.vpin').all()) {
+    const r = await b.boundingBox();
+    assert.ok(r.x >= 0 && r.x + r.width <= 390 && r.y >= search.y + search.height && r.y + r.height <= sheet.y, `pin ${JSON.stringify(r)} clear of sheet at ${sheet.y}`);
+  }
   assert.equal(await p2.textContent('#vlist-title'), 'A short walk');
   assert.deepEqual(await p2.locator('#vlist ol li button .vname').allTextContents(), ['Second stop', 'Third stop']);
   await p2.click('#vlist ol li:nth-child(1) button');
   assert.equal(await p2.textContent('#vlist ol li:nth-child(1) .vnote'), 'Worth the climb.');
+  // a focused pin keeps focus as the map turns; Escape closes the list
+  await p2.focus('.vpin[data-i="1"]');
+  await p2.evaluate(() => window.__iso.rotate(1));
+  assert.equal(await p2.evaluate(() => document.activeElement?.dataset.i), '1');
+  await p2.keyboard.press('Escape');
+  assert.ok(await p2.isHidden('#vlist'));
   assert.deepEqual(errors, []);
   await ctx.close();
 });

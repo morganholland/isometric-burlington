@@ -1,5 +1,7 @@
 // Visitor lists: a title, a "by" line and up to 20 spots with notes, kept entirely in the link (no accounts,
 // no database). Encoded as compact JSON in base64url; anything that does not decode cleanly is no list at all.
+// longest list code the maker will put in a link (chat apps and texts cut longer links short)
+export const LINK_MAX = 8000;
 export const LIMITS = { title: 80, by: 40, name: 60, note: 240, items: 20 };
 const BOX = { lat: [44.35, 44.60], lon: [-73.35, -73.05] };   // the drawn area, with room to spare
 

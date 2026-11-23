@@ -55,3 +55,19 @@ test('any list made in the builder comes back the same', () => {
   fc.assert(fc.property(fc.record({ title: str(LIMITS.title).map(s => s.trim()), by: str(LIMITS.by).map(s => s.trim()), items: fc.array(item, { minLength: 1, maxLength: LIMITS.items }) }),
     l => { assert.deepEqual(decodeList(encodeList(l)), l); }), { numRuns: 300 });
 });
+
+test('a typical list fits in a link: ten spots with a sentence or two each', async () => {
+  const { LINK_MAX } = await import('../viewer/lists.js');
+  const note = 'Get the maple creemee, then walk down to the water and sit on the swings until sunset.';
+  const items = Array.from({ length: 10 }, (_, i) => ({ name: `Spot number ${i + 1}`, note, lat: 44.47 + i / 1000, lon: -73.21 }));
+  const code = encodeList({ title: 'My favourite afternoon in Burlington', by: 'A visitor', items });
+  assert.ok(code.length < LINK_MAX, `${code.length} chars`);
+});
+
+test('a list link without a view keeps its angle', async () => {
+  const { listAngle } = await import('../viewer/share.js');
+  assert.equal(listAngle('#a=2&l=abc'), 2);
+  assert.equal(listAngle('#l=abc'), 0);
+  assert.equal(listAngle('#a=-1&l=abc'), 3);
+  assert.equal(listAngle('#a=zz&l=abc'), 0);
+});

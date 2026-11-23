@@ -11,6 +11,11 @@ export function viewHash({ angle, x, y, zoom, time, moment, list }) {
 export function readList(hash) {
   return new URLSearchParams(String(hash).replace(/^#/, '')).get('l') || null;
 }
+// the angle a list link without a view asks for
+export function listAngle(hash) {
+  const a = Math.round(Number(new URLSearchParams(String(hash).replace(/^#/, '')).get('a')));
+  return Number.isFinite(a) ? ((a % 4) + 4) % 4 : 0;
+}
 // the moment a link asks for, with or without a view in it
 export function readMoment(hash) {
   const m = new URLSearchParams(String(hash).replace(/^#/, '')).get('m');
