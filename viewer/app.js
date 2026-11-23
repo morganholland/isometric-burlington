@@ -305,7 +305,8 @@ function showTip() {
 }
 function busTip(e) { tipAt = e.containerPoint; showTip(); }
 map.on('click', e => { if (moments.on && moments.hit(e.containerPoint.x, e.containerPoint.y)) track('champ_tapped'); });
-buses.onFrame = () => { if (tipAt && !$('#bus-tip').hidden) showTip(); };
+// keep an open tip following what it describes (and gone once that is: Champ dives), whichever layer is on
+buses.onFrame = moments.onFrame = () => { if (tipAt && !$('#bus-tip').hidden) showTip(); };
 map.on('mousemove', busTip);
 map.on('click', busTip);
 map.on('mouseout', () => { tipAt = null; $('#bus-tip').hidden = true; });
@@ -313,7 +314,10 @@ map.on('movestart zoomstart', () => { tipAt = null; $('#bus-tip').hidden = true;
 $('#show-labels').addEventListener('change', e => { labels.on = e.target.checked; labels.draw(); });
 $('#show-buses').addEventListener('change', e => { buses.on = e.target.checked; if (!buses.on) $('#bus-tip').hidden = true; });
 $('#show-planes').addEventListener('change', e => { planes.on = e.target.checked; if (!planes.on) $('#bus-tip').hidden = true; });
-$('#show-moments').addEventListener('change', e => { moments.on = e.target.checked; if (!moments.on) $('#bus-tip').hidden = true; });
+$('#show-moments').checked = moments.on;
+$('#show-moments').addEventListener('change', e => { moments.on = e.target.checked; if (!moments.on) { $('#bus-tip').hidden = true; forgetMoment(); } });
+// a moment a link asked for lasts until the visitor changes the time of day or switches moments off
+function forgetMoment() { if (state.moment) { state.moment = moments.forced = null; saveHash(); } }
 $('#show-cars').addEventListener('change', e => { cars.on = e.target.checked; cars.aim(); track('cars_toggled', { on: cars.on }); });
 function applySky() {
   const live = nightFactor();
@@ -330,7 +334,7 @@ function applySky() {
   document.body.classList.toggle('has-snow', snow > 0);
   const t = new Date().toLocaleTimeString('en-US', { timeZone: 'America/New_York', hour: 'numeric', minute: '2-digit' });
   const ww = state.weather;
-  const inches = state.snowDepth != null && state.snowDepth >= 0.01 ? Math.round(state.snowDepth * 39.37) : 0;
+  const inches = state.weatherMode === 'live' && state.snowDepth != null && state.snowDepth >= 0.01 ? Math.round(state.snowDepth * 39.37) : 0;
   $('#status').textContent = `Burlington ${t}` + (ww ? ` · ${ww.tempF != null ? ww.tempF + '°F ' : ''}${ww.text.toLowerCase()}` : '')
     + (inches ? ` · ${inches}″ of snow on the ground` : '');
 }
@@ -351,7 +355,7 @@ $('#rot-right').addEventListener('click', () => rotate(1));
 $('#zoom-in').addEventListener('click', () => map.zoomIn());
 $('#zoom-out').addEventListener('click', () => map.zoomOut());
 $('#layers-btn').addEventListener('click', () => { const p = $('#layers'); p.hidden = !p.hidden; $('#layers-btn').setAttribute('aria-expanded', String(!p.hidden)); if (!p.hidden) { $('#places-list').hidden = true; $('#places-btn').setAttribute('aria-expanded', 'false'); } });
-document.querySelectorAll('input[name=time]').forEach(i => i.addEventListener('change', () => { state.timeMode = i.value; applySky(); saveHash(); }));
+document.querySelectorAll('input[name=time]').forEach(i => i.addEventListener('change', () => { state.timeMode = i.value; forgetMoment(); applySky(); saveHash(); }));
 document.querySelectorAll('input[name=wx]').forEach(i => i.addEventListener('change', () => { state.weatherMode = i.value; applySky(); }));
 // ---------- share a link to this view, save a picture of it ----------
 let toastTimer;
@@ -381,7 +385,7 @@ async function takeSnapshot() {
   try {
     const night = +getComputedStyle(document.documentElement).getPropertyValue('--night') || 0;
     const { blob, drawn, asked } = await snapshot({
-      width: innerWidth, height: innerHeight, night, snow: +getComputedStyle(document.documentElement).getPropertyValue('--snow') || 0, caption: 'isoburlington.com',
+      width: innerWidth, height: innerHeight, night, snow: document.body.classList.contains('has-snow') ? +getComputedStyle(document.documentElement).getPropertyValue('--snow') || 0 : 0, caption: 'isoburlington.com',
       tiles: tilesOnScreen(), tileUrl: src => (TILE_BASE && src.startsWith(TILE_BASE) ? 'tiles' + src.slice(TILE_BASE.length) : src),
       layers: [
         { canvas: $('#lights'), blend: 'screen', alpha: +$('#lights').style.opacity || 0 },
@@ -459,6 +463,7 @@ async function loadManifest() {
   if (h && h.t !== 'live') { state.timeMode = h.t; document.querySelector(`input[name=time][value=${h.t}]`).checked = true; }
   // a link can ask for a local moment; fireworks and the holiday lights are night things
   state.moment = moments.forced = readMoment(location.hash);
+  if (state.moment && !moments.on) { moments.on = true; $('#show-moments').checked = true; }   // asked for by name: show it, still
   if (state.moment && state.moment !== 'champ' && !(h && h.t !== 'live')) { state.timeMode = 'night'; $('input[name=time][value=night]').checked = true; }
   if (h) showAngle(h.a, [h.x, h.y], h.z);
   else {

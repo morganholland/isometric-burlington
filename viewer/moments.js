@@ -43,7 +43,7 @@ export function momentsAt(date = new Date()) {
   const md = ymd.slice(4), h = s / 3600;
   const fireworks = (md === '0703' && h >= 21.25 && h < 22.25) ||       // Independence Day, over the lake
     (md === '1231' && h >= 23.75) || (md === '0101' && h < 0.33);       // New Year
-  const holiday = md >= '1120' || md <= '0106';
+  const holiday = md >= '1120' || md === '0101';        // late November to New Year's Day
   return { fireworks, holiday, champ: champAt(date.getTime() / 1000) };
 }
 // Champ: every five minutes there is a chance it surfaces, at one of the lake spots, for 40 seconds.
@@ -58,11 +58,12 @@ export function champAt(epochS) {
 export class MomentLayer {
   constructor(canvas, map, toLL, getAngle, inRegion) {
     Object.assign(this, { c: canvas, ctx: canvas.getContext('2d'), map, toLL, getAngle, inRegion });
-    this.on = true; this.forced = null; this.night = 0; this.offsetMs = 0; this.zooming = false;
+    // like the cars, these start switched off for people who ask for less motion
+    this.on = !matchMedia('(prefers-reduced-motion: reduce)').matches; this.forced = null; this.night = 0; this.offsetMs = 0; this.zooming = false;
     this.reduced = matchMedia('(prefers-reduced-motion: reduce)').matches;
     this.shells = []; this.sparks = []; this.nextShell = 0; this.bulbs = null; this.champBox = null;
     this.drawn = { fireworks: 0, champ: false, holiday: 0 };
-    this.onShown = () => {};
+    this.onShown = () => {}; this.onFrame = () => {};
     this.last = performance.now();
     this.resize(); addEventListener('resize', () => this.resize());
     map.on('zoomstart', () => { this.zooming = true; });
@@ -98,8 +99,12 @@ export class MomentLayer {
   }
   now() { return new Date(Date.now() + this.offsetMs); }
   active() {
-    if (this.forced) return { fireworks: this.forced === 'fireworks', holiday: this.forced === 'holiday', champ: this.forced === 'champ' ? { spot: 0, t: ((Date.now() / 1000) % CHAMP_FOR) / CHAMP_FOR * 0.7 + 0.15 } : null };
-    return momentsAt(this.now());
+    // a moment a link asks for comes on top of whatever Burlington's calendar has on
+    const on = momentsAt(this.now());
+    if (this.forced === 'fireworks') on.fireworks = true;
+    if (this.forced === 'holiday') on.holiday = true;
+    if (this.forced === 'champ') on.champ = { spot: 0, t: this.reduced ? 0.5 : ((Date.now() / 1000) % CHAMP_FOR) / CHAMP_FOR * 0.7 + 0.15 };
+    return on;
   }
   // screen = origin + E*e + N*n + U*u (the projection is linear): worked out once a frame
   basis() {
@@ -122,14 +127,18 @@ export class MomentLayer {
     const on = this.active();
     const B = this.basis(), a = this.getAngle();
     const near = ([x, y], m = 1) => x > -innerWidth * m && y > -innerHeight * m && x < innerWidth * (1 + m) && y < innerHeight * (1 + m);
-    if (on.holiday && this.bulbs && (this.night > 0.35 || this.forced === 'holiday') && this.map.getZoom() >= -3.25) this.holiday(B, a, t);
-    if (on.fireworks || this.sparks.length) {
+    // lights and fireworks are night things, even when a link asks for them: choosing day puts them out
+    const dark = this.night > 0.35;
+    if (on.holiday && dark && this.bulbs && this.map.getZoom() >= -3.25) this.holiday(B, a, t);
+    if (!dark) { this.shells.length = 0; this.sparks.length = 0; }
+    else if (on.fireworks || this.sparks.length) {
       const [fe, fn] = llaToEnu(FW_SITE[0], FW_SITE[1], 0);
       if (near(B.at(fe, fn, 150), 0.5)) this.fireworks(B, dt, on.fireworks, fe, fn);
       else { this.shells.length = 0; this.sparks.length = 0; }
     }
     if (on.champ) this.champ(B, on.champ, t);
     for (const k of MOMENTS) if (k === 'champ' ? this.drawn.champ : this.drawn[k] > 0) this.onShown(k);
+    this.onFrame();
   }
   holiday(B, a, t) {
     const { ctx } = this;
@@ -153,7 +162,17 @@ export class MomentLayer {
   fireworks(B, dt, launching, fe, fn) {
     const { ctx } = this;
     const now = performance.now() / 1000;
-    if (launching && now >= this.nextShell) {
+    if (this.reduced) {
+      // less motion: three bursts held still in the sky, nothing launching or flashing
+      if (launching && !this.sparks.length) for (const [de, dn, top, hue] of [[-40, 10, 230, 350], [30, -20, 270, 45], [5, 35, 200, 200]]) {
+        const n = 48;
+        for (let i = 0; i < n; i++) {
+          const z = 1 - 2 * (i + 0.5) / n, rr = Math.sqrt(1 - z * z), ph = i * 2.39996, d = 45;
+          this.sparks.push({ ce: fe + de, cn: fn + dn, cu: top, e: Math.cos(ph) * rr * d, n: Math.sin(ph) * rr * d, u: z * d, ve: 0, vn: 0, vu: 0, life: 0.4, max: 1e9, hue, drag: 0 });
+        }
+      }
+      if (!launching) this.sparks.length = 0;
+    } else if (launching && now >= this.nextShell) {
       this.shells.push({ e: fe + (Math.random() - 0.5) * 60, n: fn + (Math.random() - 0.5) * 60, top: 200 + Math.random() * 110, t: 0, rise: 1.2 + Math.random() * 0.5,
         hue: Math.floor(Math.random() * 360), kind: Math.random() < 0.3 ? 'willow' : 'peony' });
       this.nextShell = now + (this.reduced ? 1.6 : 0.3 + Math.random() * 0.7);
@@ -190,7 +209,7 @@ export class MomentLayer {
         p.e += p.ve * dt; p.n += p.vn * dt; p.u += p.vu * dt;
         const d = Math.exp(-p.drag * dt); p.ve *= d; p.vn *= d; p.vu = p.vu * d - g * dt;
       }
-      p.life += dt;
+      if (!this.reduced) p.life += dt;
       const [x, y] = at(p);
       const fade = Math.max(0, 1 - p.life / p.max);
       ctx.strokeStyle = ctx.fillStyle = `hsla(${p.hue},100%,${55 + 20 * fade}%,${fade})`;
@@ -210,7 +229,7 @@ export class MomentLayer {
     if (x < -80 || y < -80 || x > innerWidth + 80 || y > innerHeight + 80) return;
     const { ctx } = this;
     const s = Math.max(1.1, Math.min(5, B.mpx));               // body ~60 m long, never too small to spot
-    const up = Math.min(1, c.t / 0.15, (1 - c.t) / 0.15);      // surfacing and diving
+    const up = this.reduced ? 1 : Math.min(1, c.t / 0.15, (1 - c.t) / 0.15);      // surfacing and diving (or simply there)
     const bob = this.reduced ? 0 : Math.sin(t / 600) * 1.2 * s;
     const dir = Math.sign(B.ex) || 1;                          // swim the same way on screen in every view
     const ink = '#14201a', body = this.night > 0.5 ? '#4f7a62' : '#5e9a6e', belly = this.night > 0.5 ? '#6f9a80' : '#9cc79f';

@@ -381,10 +381,18 @@ test('cars drive the streets when you are close, more at rush hour, and can be s
   await ctx.close();
 });
 
-test('people who ask for less motion start without cars', async () => {
+test('people who ask for less motion start without cars or moments; a fireworks link shows them held still', async () => {
   const { ctx, page, errors } = await open({ viewport: { width: 1400, height: 880 }, reducedMotion: 'reduce' });
   assert.equal(await page.isChecked('#show-cars'), false);
   assert.equal(await page.evaluate(() => window.__iso.cars.on), false);
+  assert.equal(await page.isChecked('#show-moments'), false);
+  assert.equal(await page.evaluate(() => window.__iso.moments.on), false);
+  await page.goto(URL0 + '#m=fireworks'); await page.reload(); await page.waitForFunction(() => window.__iso);
+  await page.waitForFunction(() => window.__iso.moments.drawn.fireworks > 0, null, { timeout: 8000 });
+  const where = () => page.evaluate(() => window.__iso.moments.sparks.slice(0, 20).map(p => [p.e, p.n, p.u, p.life]));
+  const a = await where(); await page.waitForTimeout(800); const b = await where();
+  assert.deepEqual(a, b, 'nothing moves or fades');
+  assert.equal(await page.evaluate(() => window.__iso.moments.shells.length), 0, 'nothing launches');
   assert.deepEqual(errors, []);
   await ctx.close();
 });
@@ -533,6 +541,14 @@ test('a fireworks link opens at night with fireworks over the waterfront, and ke
   await page.evaluate(() => window.__iso.map.panBy([10, 0], { animate: false }));
   await page.waitForTimeout(300);
   assert.match(page.url(), /&m=fireworks/);
+  // choosing day puts them out and the moment no longer travels with the link
+  await page.click('#layers-btn');
+  await page.check('input[name=time][value=day]');
+  await page.waitForTimeout(300);
+  assert.equal(await page.evaluate(() => window.__iso.moments.drawn.fireworks), 0);
+  assert.doesNotMatch(page.url(), /&m=/);
+  await page.check('input[name=time][value=night]');
+  await page.click('#layers-btn');
   // switched off, nothing is drawn
   await page.click('#layers-btn');
   await page.uncheck('#show-moments');
@@ -582,6 +598,11 @@ test('Champ surfaces in the lake and says it is a legend when tapped', async () 
   await page.waitForSelector('#bus-tip:not([hidden])');
   assert.match(await page.textContent('#bus-tip'), /Champ/);
   assert.match(await page.textContent('#bus-tip'), /legend/);
+  // with the buses switched off too, the tip still goes once Champ has dived
+  await page.evaluate(() => { window.__iso.buses.on = false; window.__iso.moments.forced = null; window.__iso.moments.offsetMs = 0; });
+  await page.evaluate(() => { const m = window.__iso.moments; m.active = () => ({ fireworks: false, holiday: false, champ: null }); });
+  await page.waitForSelector('#bus-tip', { state: 'hidden', timeout: 3000 });
+  await page.evaluate(() => { delete window.__iso.moments.active; window.__iso.moments.forced = 'champ'; window.__iso.buses.on = true; });
   if (SHOTS) await page.screenshot({ path: `${SHOTS}/champ-tip.png` });
   // it turns with the map and is still in the lake
   await page.click('#rot-right');

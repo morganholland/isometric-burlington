@@ -62,9 +62,15 @@ export async function snapshot({ width, height, tiles, tileUrl, night, snow = 0,
   tiles.map((t, i) => [t, bmps[i]]).filter(p => p[1]).sort((p, q) => q[0].w - p[0].w)     // coarser tiles underneath
     .forEach(([t, bmp]) => { ctx.drawImage(bmp, t.x, t.y, t.w, t.h); drawn++; });
   if (snow > 0.01) {
-    // snow lying on the ground, as the page does it: a cold white screened over the drawing
-    ctx.globalCompositeOperation = 'screen'; ctx.globalAlpha = snow * 0.45;
-    ctx.fillStyle = '#c9d7e2'; ctx.fillRect(0, 0, width, height);
+    // snow lying on the ground, as the page does it (style.css): the drawing brightened, flattened and
+    // drained of colour, then a cold white screened over it
+    const copy = document.createElement('canvas'); copy.width = c.width; copy.height = c.height;
+    copy.getContext('2d').drawImage(c, 0, 0);
+    ctx.filter = `brightness(${1 + snow * 0.3}) contrast(${1 - snow * 0.2}) saturate(${1 - snow * 0.6})`;   // ignored where unsupported
+    ctx.drawImage(copy, 0, 0, width, height);
+    ctx.filter = 'none';
+    ctx.globalCompositeOperation = 'screen'; ctx.globalAlpha = snow * 0.3;
+    ctx.fillStyle = '#b9cad8'; ctx.fillRect(0, 0, width, height);
     ctx.globalCompositeOperation = 'source-over'; ctx.globalAlpha = 1;
   }
   if (night > 0.01) {

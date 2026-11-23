@@ -18,6 +18,7 @@ html,body{height:100%;margin:0;background:var(--ground);color:var(--ink);font:14
 /* snow lying on the ground: a cold white lifted over the drawing (it lightens the dark greens and roofs most),
    in its own pane under the night tint so a snowy night is still night. --snow is 0..1. */
 .leaflet-snow-pane{pointer-events:none;mix-blend-mode:screen}
+body:not(.has-snow) .leaflet-snow-pane{display:none}   /* bare ground costs nothing while panning */
 #snowcover{position:absolute;left:0;top:0;width:100vw;height:100vh;pointer-events:none;background:#b9cad8;opacity:calc(var(--snow,0)*.3);transition:opacity .8s}
 #night{position:absolute;left:0;top:0;width:100vw;height:100vh;pointer-events:none;background:#14234a;mix-blend-mode:multiply;opacity:calc(var(--night)*.55);transition:opacity .6s;z-index:401}
 /* paper: a printed-map grain over the drawing. It fades in as you zoom past the drawing's own
