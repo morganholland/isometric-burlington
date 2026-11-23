@@ -82,8 +82,14 @@
 ## The Amtrak train (2026-11-23)
 - Amtrak's GTFS has no `shape_dist_traveled`: measure the shape yourself and project each station onto it.
   The shape is sparse (27 points inside the map) but its points sit on the curves, so it follows the track well.
-- The map's street heights in `viewer/labels.json` are the same ellipsoid heights the bus shapes use, so they
-  work as an offline height source for anything near a street; no DEM call is needed.
+- Amtrak's shape has a 2 km straight chord past Red Rocks that put the train 40-65 px off the drawn rails.
+  Overpass (OSM) is blocked from the container, but the US DOT "North American Rail Network Lines" ArcGIS
+  service is reachable: filter to Amtrak trackage rights, sample the shape every 10 m and snap it on.
+  That data stops ~200 m short of Union Station's platform; Amtrak's own shape covers the last stretch.
+- The map's street heights in `viewer/labels.json` are the same ellipsoid heights the bus shapes use, but
+  take one only when the street is within ~40 m and interpolate between: the nearest street can be 300 m away.
+- Park an overnight train where and how the morning train starts (on the departing shape, facing out), or it
+  jumps and swaps ends at departure time.
 - A train at the very start of its track would hang its coaches off the end: move the whole consist up the
   track until it fits, which also leaves it standing at the platform.
 - Constant speed between stations puts the evening train on the map only from about 9:14 pm (Ferrisburgh is
