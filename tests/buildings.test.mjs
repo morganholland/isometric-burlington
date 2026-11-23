@@ -98,9 +98,10 @@ test('the card: address first, then what it is and when it was built; nothing wi
   assert.equal(describeBuilding({ found: true, address: null, use: 'Commercial' }), null);
 });
 
-test('the lookup takes one point inside the map, to at most 5 decimals', () => {
+test('the lookup takes one or two points inside the map, to at most 5 decimals', () => {
   assert.deepEqual(parsePoints('44.478,-73.2128'), [[44.478, -73.2128]]);
-  for (const bad of [undefined, '', '44.478', '44.478,-73.2,1', 'a,b', '40.7,-74.0', '44.478,-73.2128;44.4781,-73.213', '44.4781234,-73.21', '0x2c,-73.21', '44.47,', 'x'.repeat(500)]) assert.equal(parsePoints(bad), null, String(bad));
+  assert.deepEqual(parsePoints('44.478,-73.2128;44.4781,-73.213'), [[44.478, -73.2128], [44.4781, -73.213]]);
+  for (const bad of [undefined, '', '44.478', '44.478,-73.2,1', 'a,b', '40.7,-74.0', '44.478,-73.2128;44.4781,-73.213;44.478,-73.2128', '44.4781234,-73.21', '0x2c,-73.21', '44.47,', 'x'.repeat(500)]) assert.equal(parsePoints(bad), null, String(bad));
 });
 
 test('owners and values never leave the function, whatever the records hold', () => {
@@ -137,6 +138,14 @@ test('Burlington adds its year built and building type to the state record', asy
   assert.equal(r.outline.length, 4);
   assert.equal(JSON.stringify(r).includes('SOMEONE'), false);
   for (const c of f.calls) assert.doesNotMatch(c[3], /OWNER/);
+});
+
+test('a point that misses every numbered lot falls back to the middle of the building', async () => {
+  const f = fakeArcgis({ 'vt:44.47,-73.21': [{ E911ADDR: null, TNAME: null }], 'vt:44.4701,-73.21': [{ E911ADDR: '48 MAIN STREET', TNAME: 'WINOOSKI', CAT: 'C' }] });
+  assert.equal((await lookup([[44.47, -73.21], [44.4701, -73.21]], f)).address, '48 Main Street');
+  const g = fakeArcgis({ 'vt:44.47,-73.21': [{ E911ADDR: '12 MAPLE ST', TNAME: 'WINOOSKI' }] });
+  await lookup([[44.47, -73.21], [44.4701, -73.21]], g);
+  assert.equal(g.calls.length, 1, 'no second call when the first point answers');
 });
 
 test('a condo is named as the building, never as one unit', async () => {

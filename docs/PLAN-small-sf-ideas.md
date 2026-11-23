@@ -73,7 +73,8 @@ Each slice is its own small pull request, merged when its tests are green and it
       footprints with heights, about 380 KB gzipped, fetched on the first tap) is walked down the line of sight
       from the tap, and the first footprint tall enough to reach it wins (property-tested, and checked on the
       Hilton, Decker Towers and a New North End house from all four sides). With no building in the way the
-      tap is on the ground. One point inside the building, to 5 decimals, is sent to the lookup.
+      tap is on the ground. A point inside the building and, as a fallback when that point is on no numbered
+      lot, the middle of its footprint are sent to the lookup, to 5 decimals.
     - 12c. Condominiums are named as the building ("1 Main St"), never one unit; unnumbered lots are nothing.
     - 12d. Only zoomed in (zoom -1.5 or closer), and never when the tap hit a bus, plane, Champ or a pin, or while
       the corrections or list cards are open. A double-click zooms and looks nothing up. A tap while the place

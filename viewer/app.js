@@ -487,10 +487,11 @@ async function lookUp(seq, angle, x, y) {
   const index = await buildingIndex();
   if (seq !== bldg.seq) return;
   const hit = hitBuilding(index, angle, x, y, groundU(angle, x, y, streetPts));
-  const [lat, lon] = lookupPoint(hit.e, hit.n);
+  const pts = [lookupPoint(hit.e, hit.n)];
+  if (hit.building) { const r = hit.building.ring; pts.push(lookupPoint(r.reduce((s, p) => s + p[0], 0) / r.length, r.reduce((s, p) => s + p[1], 0) / r.length)); }
   let r = null, down = false;
   try {
-    const res = await fetch(`/api/building?pts=${lat},${lon}`);
+    const res = await fetch(`/api/building?pts=${pts.map(p => p.join(',')).join(';')}`);
     r = await res.json();
     down = !res.ok || !!r.error;
   } catch { down = true; }

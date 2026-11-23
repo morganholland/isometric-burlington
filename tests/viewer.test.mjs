@@ -157,8 +157,8 @@ test('tap a building: the one you see, its public record, outlined, with no owne
   assert.equal(await page.textContent('#bldg .bldg-line'), 'Hotel, built 1975');
   assert.match(await page.textContent('#bldg .bldg-src'), /Owners and values are left out/);
   assert.equal(asked.length, 1);
-  const [lat, lon] = asked[0].split(',').map(Number);
-  assert.match(asked[0], /^44\.\d{1,5},-73\.\d{1,5}$/, 'one point, to about a metre');
+  const [lat, lon] = asked[0].split(';')[0].split(',').map(Number);
+  assert.match(asked[0], /^44\.\d{1,5},-73\.\d{1,5};44\.\d{1,5},-73\.\d{1,5}$/, 'a point in the building and its middle, to about a metre');
   const [e, n] = llaToEnu(lat, lon, 0);
   assert.ok(insideRing(roof.ring, e, n), `${asked[0]} is inside the Hilton`);
   assert.equal(await page.locator('path.bldg-outline').count(), 1, 'the building is outlined');

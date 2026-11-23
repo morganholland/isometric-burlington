@@ -2,7 +2,8 @@
 // year it was built. Never owners' names or values: only the fields named below are asked for, and only the
 // fields in `pick` are passed on.
 //
-// GET /api/building?pts=lat,lon  (a point inside the building the tap hit, or on the ground under it)
+// GET /api/building?pts=lat,lon[;lat,lon]  (a point inside the building the tap hit, or on the ground under it;
+// then, if that point is on no numbered lot, the middle of the building's footprint)
 //
 // Sources (both public ArcGIS services, no key):
 // - City of Burlington parcels with land use and assessor information (year built, building type)
@@ -20,7 +21,7 @@ export const SOURCES = {
   },
 };
 const TIMEOUT_MS = 4000;
-const MAX_PTS = 1;
+const MAX_PTS = 2;
 const BOX = { lat: [44.35, 44.6], lon: [-73.35, -73.05] };   // the drawn area and a margin
 
 // "lat,lon;lat,lon" -> [[lat, lon]], or null if anything is off
@@ -125,9 +126,12 @@ async function query(src, [lat, lon], fetchImpl) {
 // at the same point adds the year built and building type (its own polygons are cut into pieces, so they are
 // not used as outlines). "Nothing there" and "a source is down" are told apart, so an outage is not cached.
 export async function lookup(pts, fetchImpl = fetch) {
-  const p = pts[0];
-  const lot = await query('vt', p, fetchImpl);              // throws SourceDown
-  if (!lot || !numbered(lot.address)) return { found: false };   // roads, water and unnumbered lots are not buildings
+  let p = null, lot = null;
+  for (const q of pts) {                                      // a footprint can poke past its lot: try its middle next
+    lot = await query('vt', q, fetchImpl);                    // throws SourceDown
+    if (lot && numbered(lot.address)) { p = q; break; }
+  }
+  if (!p) return { found: false };                            // roads, water and unnumbered lots are not buildings
   if (lot.town === 'Burlington') {
     let city = null, partial = false;
     try { city = await query('btv', p, fetchImpl); } catch (e) { if (!(e instanceof SourceDown)) throw e; partial = true; }
@@ -142,7 +146,7 @@ export async function lookup(pts, fetchImpl = fetch) {
 
 export default async function handler(req, res) {
   const pts = parsePoints(req.query && req.query.pts);
-  if (!pts) { res.status(400).json({ found: false, error: 'pts must be one lat,lon pair inside the map' }); return; }
+  if (!pts) { res.status(400).json({ found: false, error: 'pts must be one or two lat,lon pairs inside the map' }); return; }
   try {
     const out = await lookup(pts);
     // records change yearly; an answer missing a source that was down is kept only briefly
