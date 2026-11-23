@@ -115,6 +115,29 @@ test('phone: nothing overflows and controls are reachable', async () => {
   await ctx.close();
 });
 
+test('the Amtrak train parks at Union Station overnight and says so', async () => {
+  const { ctx, page, errors } = await open({ viewport: { width: 1400, height: 880 } });
+  await page.waitForFunction(() => window.__iso.buses.data);
+  // 11 pm on a Tuesday, looking at the waterfront by the station
+  await page.evaluate(() => {
+    window.__iso.buses.offsetMs = Date.parse('2026-11-25T04:00:00Z') - Date.now();   // inside the feed's dates
+    window.__iso.goTo(44.4757, -73.2195, 'Union Station');
+  });
+  await page.waitForTimeout(1600);
+  await page.evaluate(() => window.__iso.map.setZoom(-0.5, { animate: false }));
+  await page.waitForFunction(() => window.__iso.buses.drawn.filter(d => d.b.train).length === 6, null, { timeout: 5000 });
+  if (SHOTS) await page.screenshot({ path: `${SHOTS}/desktop-train.png` });
+  const p = await page.evaluate(() => { const d = window.__iso.buses.drawn.find(d => d.b.train && document.elementFromPoint(d.x, d.y)?.closest('#map')); return d && [d.x, d.y]; });
+  assert.ok(p, 'a car of the train in the open map');
+  await page.mouse.move(p[0], p[1]);
+  await page.waitForSelector('#bus-tip:not([hidden])', { timeout: 3000 });
+  assert.equal(await page.textContent('#bus-tip b'), 'Amtrak Ethan Allen Express');
+  assert.match(await page.textContent('#bus-tip .long'), /Parked at Union Station/);
+  assert.match(await page.textContent('#bus-tip .until'), /leaves for New York at 9:25 am/);
+  assert.deepEqual(errors, []);
+  await ctx.close();
+});
+
 test('buses run on the timetable and say which route they are', async () => {
   const { ctx, page, errors } = await open({ viewport: { width: 1400, height: 880 } });
   await page.waitForFunction(() => window.__iso.buses.data);

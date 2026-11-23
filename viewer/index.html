@@ -73,7 +73,7 @@
 <div id="toast" class="card toast" role="status" aria-live="polite" hidden></div>
 
 <div id="hint" class="card hint" role="note" hidden>
-  <span class="hint-text"><b>Drag</b> to explore, <b>⟳</b> to turn the city, and <b>tap a bus or plane</b> to see what it is.</span>
+  <span class="hint-text"><b>Drag</b> to explore, <b>⟳</b> to turn the city, and <b>tap a bus, train or plane</b> to see what it is.</span>
   <span class="hint-actions"><button id="hint-more" type="button">How to use</button><button id="hint-ok" type="button">Got it</button></span>
 </div>
 
@@ -84,10 +84,10 @@
     <li><b>Move around:</b> drag the map. Scroll, pinch or use <b>+ −</b> to zoom.</li>
     <li><b>Turn the city:</b> <b>⟲ ⟳</b> (or the <kbd>[</kbd> <kbd>]</kbd> keys) show it from all four sides.</li>
     <li><b>Find a place:</b> search any street, address or landmark at the top.</li>
-    <li><b>Buses and planes:</b> hover or tap one to see its route or flight.</li>
+    <li><b>Buses, the train and planes:</b> hover or tap one to see its route, run or flight.</li>
     <li><b>Keep an eye on the lake:</b> Champ surfaces now and then.</li>
     <li><b>★</b> lists places worth a look, each with a short note. Tap a pin on the map to read one. You can also make your own list there and share it as a link.</li>
-    <li><b>◐</b> switches time of day, weather, names, cars, buses and planes.</li>
+    <li><b>◐</b> switches time of day, weather, names, cars, buses, the train and planes.</li>
     <li><b>Share:</b> the arrow copies a link to exactly this view; the camera saves a picture of it.</li>
   </ul>
   <h3>What you're looking at</h3>
@@ -170,13 +170,13 @@
     <label><input type="checkbox" id="show-labels" checked> Street and place names</label>
     <label><input type="checkbox" id="show-places" checked> Places worth a look (★)</label>
     <label><input type="checkbox" id="show-cars" checked> Cars (simulated)</label>
-    <label><input type="checkbox" id="show-buses" checked> GMT buses (timetable)</label>
+    <label><input type="checkbox" id="show-buses" checked> Buses and the Amtrak train (timetable)</label>
     <label><input type="checkbox" id="show-planes" checked> Planes (live)</label>
     <label><input type="checkbox" id="show-moments" checked> Fireworks, Champ, holiday lights</label>
   </fieldset>
 </section>
 
-<footer class="status card"><span id="status">Burlington</span><span class="credit-short">Imagery © Google</span><span class="credit"><a class="by" href="https://morgz.org" target="_blank" rel="noopener">by morgz.org</a> · <a class="by" href="./how.html">How it was made</a> · <a class="by tip-inline" href="#" target="_blank" rel="noopener" hidden>☕ Tip</a><span class="tip-sep" hidden> · </span>Imagery Google · Cesium ion · Built with Qwen · © OpenStreetMap contributors · Weather NWS · Snow Open-Meteo · Buses GMT timetable · Flights adsb.lol (ODbL)</span></footer>
+<footer class="status card"><span id="status">Burlington</span><span class="credit-short">Imagery © Google</span><span class="credit"><a class="by" href="https://morgz.org" target="_blank" rel="noopener">by morgz.org</a> · <a class="by" href="./how.html">How it was made</a> · <a class="by tip-inline" href="#" target="_blank" rel="noopener" hidden>☕ Tip</a><span class="tip-sep" hidden> · </span>Imagery Google · Cesium ion · Built with Qwen · © OpenStreetMap contributors · Weather NWS · Snow Open-Meteo · Buses GMT timetable · Train Amtrak timetable · Flights adsb.lol (ODbL)</span></footer>
 <script type="module" src="./app.js"></script>
 </body>
 </html>

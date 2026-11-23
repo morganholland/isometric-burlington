@@ -8,7 +8,8 @@
 - Slice 1 (snow on the ground, fireworks, Champ, holiday lights): live on isoburlington.com since 2026-11-23 (PR #4).
 - Slice 2 (About page: numbers, change log, drag-to-compare): live since 2026-11-23 (PR #5).
 - Slice 3 (corrections): live since 2026-11-23 (PR #6); notes collect in the PostHog insight "Map corrections from visitors".
-- Slice 4 (visitor lists): built and tested, PR #7.
+- Slice 4 (visitor lists): live since 2026-11-23 (PR #7).
+- Slice 5 (the train): built and tested, in its own PR.
 - Slice 7 (live buses) waits on a free Swiftly key only Morgan can request: see `OWED.md`.
 - Rules: spend nothing, free feeds only, never cap zoom, say plainly on the site what is simulated or timetabled.
 
@@ -52,6 +53,13 @@ Each slice is its own small pull request, merged when its tests are green and it
 ## Slice 5: the train
 11. Amtrak's Ethan Allen Express arrives at and leaves Union Station on its published timetable, labelled
     "timetable" like the buses. No ferry runs inside the drawn area (the Port Kent crossing is suspended).
+    - 11a. `pipeline/amtrak.py` writes `viewer/amtrak.json` in the bus file's shape; the viewer joins the two.
+      Amtrak's feed has no distances along the track, so stations are projected onto the track; heights come
+      from the map's own street heights.
+    - 11b. The train is a locomotive and five coaches following the curve of the track (tests/amtrak.test.mjs).
+    - 11c. Between the 9:26 pm arrival and the 9:25 am departure it stands at Union Station, and its tip says
+      when it leaves. Its tip names the train number and direction.
+    - 11d. One "Buses and the Amtrak train" switch covers both.
 
 ## Slice 6: click a building
 12. Tapping a building shows its address, year built and use where public records have them (City of
