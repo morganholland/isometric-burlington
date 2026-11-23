@@ -9,6 +9,7 @@ const NEAR_STREET_M = 150;
 const CELL = 50;                                  // metres, the footprint index's grid
 const STEP_U = 0.25;                              // metres of height per step down the line of sight
 const ABOVE = 100;                                // start this far above the tap's ground (taller than anything here)
+const BELOW = 10;                                 // and go this far below it: the nearest street is only a guess at the ground
 
 // streets: [[lat, lon, h], ...] (labels.json street points). The ground height (ENU up) under a map pixel.
 const enuCache = new WeakMap();
@@ -64,7 +65,7 @@ export function insideRing(ring, x, y) {
 // is a ground point inside its footprint, or { building: null, e, n, u: ground } for a tap on open ground.
 export function hitBuilding(index, angle, px, py, ground) {
   if (index) {
-    for (let u = ground + ABOVE; u > ground; u -= STEP_U) {
+    for (let u = ground + ABOVE; u > ground - BELOW; u -= STEP_U) {
       const [e, n] = pxToEnu(angle, px, py, u);
       const cell = index.grid.get(Math.floor(e / CELL) * 100003 + Math.floor(n / CELL));
       if (!cell) continue;

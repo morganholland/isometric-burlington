@@ -10,21 +10,24 @@ building's outline and height.
 Footprints and heights come from OpenStreetMap, through the public "OpenStreetMap Buildings for North America"
 feature service on ArcGIS Online (Overpass is not reachable from where this runs). Where a building has no
 height tag, it is guessed from its levels, its kind and its size (same rule as pipeline/labels.py). The ground
-under each building is the height of the nearest street point in viewer/labels.json, which is the drawn ground.
+under each building is bare-earth terrain (AWS Terrain Tiles, as in pipeline/labels.py), shifted to agree with
+the road heights the bus routes were measured at, so roofs land where the drawing has them. (The nearest street
+point is not good enough: on the hill a street one block over can be 10 m higher, which puts an outline
+40 px above the roof it belongs to.)
 
 Output (compact): {"b": [[base, top, e0, n0, de1, dn1, de2, dn2, ...], ...]}
   base and top are ENU heights in metres; the outline is in half-metres east and north of the map origin, the
   first point as is and each later point as a step from the one before.
 """
 import json, math, sys, time, urllib.parse, urllib.request
-from collections import defaultdict
 from pathlib import Path
 
 import numpy as np
 
 sys.path.insert(0, str(Path(__file__).parent))
 from geo import lla_to_enu  # noqa: E402
-from labels import building_height  # noqa: E402
+import labels  # noqa: E402
+from labels import building_height, elev, GEOID_M  # noqa: E402
 
 ROOT = Path(__file__).resolve().parent.parent
 URL = "https://services6.arcgis.com/Do88DoK2xjTUCXd1/arcgis/rest/services/OSM_NA_Buildings/FeatureServer/0/query"
@@ -64,21 +67,16 @@ def fetch():
         off += len(fs)
 
 
-def ground(labels):
-    """(e, n) -> height of the nearest drawn street point (ENU up)"""
-    pts = [p for s in labels["streets"] for p in s[2]]
-    e, n, u = lla_to_enu(np.array([p[0] for p in pts]), np.array([p[1] for p in pts]), np.array([p[2] for p in pts]))
-    cells = defaultdict(list)
-    for x, y, h in zip(e, n, u):
-        cells[(int(x // 100), int(y // 100))].append((x, y, h))
-    def h(x, y):
-        cx, cy = int(x // 100), int(y // 100)
-        for r in range(1, 30):
-            near = [p for i in range(cx - r, cx + r + 1) for j in range(cy - r, cy + r + 1) for p in cells.get((i, j), ())]
-            if near:
-                return min(near, key=lambda p: (p[0] - x) ** 2 + (p[1] - y) ** 2)[2]
-        return 0.0
-    return h
+def ground():
+    """(lat, lon) -> ground height (ENU up), terrain shifted onto the bus routes' road heights"""
+    import statistics
+    labels.CACHE.mkdir(parents=True, exist_ok=True)
+    transit = json.loads((ROOT / "viewer/transit.json").read_text())
+    b = labels.BBOX
+    diffs = [p[2] - (elev(p[0], p[1]) + GEOID_M) for s in transit["shapes"] for p in s[::4] if b[0] < p[0] < b[2] and b[1] < p[1] < b[3]]
+    off = statistics.median(diffs)
+    print(f"terrain vs bus-route heights: median {off:+.2f} m")
+    return lambda lat, lon: elev(lat, lon) + GEOID_M + off
 
 
 def tags(a):
@@ -88,8 +86,8 @@ def tags(a):
     return t
 
 
-def build(features, labels):
-    h = ground(labels)
+def build(features):
+    h = ground()
     out = []
     for f in features:
         rings = (f.get("geometry") or {}).get("rings") or []
@@ -101,8 +99,7 @@ def build(features, labels):
         area = abs(sum(e[i - 1] * n[i] - e[i] * n[i - 1] for i in range(len(e)))) / 2
         if area < MIN_AREA:
             continue
-        ce, cn = float(e.mean()), float(n.mean())
-        base = h(ce, cn)
+        base = h(float(lat.mean()), float(lon.mean()))
         top = base + building_height(tags(f["attributes"]), area)
         q = [(round(float(x) * 2), round(float(y) * 2)) for x, y in zip(e[:-1], n[:-1])]   # ArcGIS repeats the first point
         flat, px, py = [], 0, 0
@@ -114,8 +111,7 @@ def build(features, labels):
 
 
 if __name__ == "__main__":
-    labels = json.loads((ROOT / "viewer/labels.json").read_text())
-    data = build(fetch(), labels)
+    data = build(fetch())
     dst = Path(sys.argv[1] if len(sys.argv) > 1 else ROOT / "viewer/buildings.json")
     dst.write_text(json.dumps(data, separators=(",", ":")))
     print(f"{len(data['b'])} buildings -> {dst} ({dst.stat().st_size // 1024} KB)")
