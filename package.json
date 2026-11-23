@@ -13,5 +13,8 @@
     "leaflet": "^1.9.4",
     "suncalc": "^1.9.0",
     "three": "^0.186.1"
+  },
+  "devDependencies": {
+    "fast-check": "^3.23.2"
   }
 }

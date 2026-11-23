@@ -5,6 +5,7 @@ import { chromium, devices } from 'playwright';
 import { spawn } from 'node:child_process';
 import fs from 'node:fs';
 import { latLonToPx, GROUND_U } from '../viewer/geo.js';
+import { encodeList } from '../viewer/lists.js';
 
 const PORT = 4817, URL0 = `http://127.0.0.1:${PORT}/`;
 let server, browser;
@@ -414,6 +415,81 @@ test('corrections: the About page sends people to the map with the note open', a
   await page.waitForSelector('#fix', { state: 'visible' });
   assert.equal(await page.evaluate(() => document.activeElement.id), 'fix-note');
   assert.doesNotMatch(await page.evaluate(() => location.hash), /fix/, 'the link is not kept in the address');
+  assert.deepEqual(errors, []);
+  await ctx.close();
+});
+
+test('visitor lists: a link shows the list, apart from the map\'s own places', async () => {
+  const list = encodeList({ title: 'Lunch <img src=x onerror="window.__pwned=1">', by: 'Dana', items: [
+    { name: 'Church Street', note: 'Start at the top of the street.', lat: 44.4780, lon: -73.2128 },
+    { name: 'Waterfront Park', note: 'Eat by the lake.', lat: 44.4790, lon: -73.2230 },
+  ] });
+  const { ctx, page, errors } = await open({ viewport: { width: 1280, height: 820 }, hash: `#l=${list}` });
+  await page.waitForSelector('#vlist', { state: 'visible' });
+  assert.match(await page.textContent('#vlist .eyebrow'), /A list by a visitor/);
+  assert.equal(await page.textContent('#vlist-title'), 'Lunch <img src=x onerror="window.__pwned=1">', 'shown as text, never as markup');
+  assert.equal(await page.evaluate(() => window.__pwned), undefined);
+  assert.match(await page.textContent('#vlist .vlist-by'), /by Dana/);
+  assert.equal(await page.locator('.vpin').count(), 2, 'a numbered pin for each spot');
+  assert.equal(await page.locator('.vpin.place-pin, .place-pin .vpin').count(), 0, "visitors' pins are not the map's own");
+  // both spots are on screen: the map opened to fit the list
+  for (const b of await page.locator('.vpin').all()) { const r = await b.boundingBox(); assert.ok(r.x > 0 && r.x < 1280 && r.y > 0 && r.y < 820); }
+  await page.click('#vlist ol li:nth-child(2) button');
+  assert.ok(await page.isVisible('#vlist ol li:nth-child(2) .vnote'));
+  assert.equal(await page.textContent('#vlist ol li:nth-child(2) .vnote'), 'Eat by the lake.');
+  assert.equal(await page.locator('.vpin.on').count(), 1);
+  // the list stays in the address as the map moves, and goes when closed
+  await page.evaluate(() => window.__iso.map.panBy([120, 0], { animate: false }));
+  await page.waitForFunction(() => /&l=/.test(location.hash) && /x=/.test(location.hash));
+  await page.click('#vlist-close');
+  assert.ok(await page.isHidden('#vlist'));
+  assert.equal(await page.locator('.vpin').count(), 0);
+  await page.waitForFunction(() => !/l=/.test(location.hash));
+  const ev = await page.evaluate(() => window.__isoEvents.filter(e => e.event === 'list_opened').map(e => e.props));
+  assert.deepEqual(ev, [{ items: 2 }], 'only the size of a list is counted, never its words');
+  // a link that has been cut short is not a list, and does not break the map
+  await page.goto(URL0 + '#l=eyJ0Ijoi');
+  await page.reload(); await page.waitForFunction(() => window.__iso);
+  assert.ok(await page.isHidden('#vlist'));
+  assert.deepEqual(errors, []);
+  await ctx.close();
+});
+
+test('visitor lists: make one from the ★ panel, and its link opens the same list', async () => {
+  const [x, y] = latLonToPx(0, 44.4780, -73.2128, GROUND_U);
+  const { ctx, page, errors } = await open({ viewport: { width: 1280, height: 820 }, hash: `#a=0&x=${Math.round(x)}&y=${Math.round(y)}&z=-1` });
+  await page.waitForFunction(() => window.__iso.places.list.length);
+  await page.click('#places-btn');
+  await page.click('#mk-open');
+  assert.ok(await page.isVisible('#mklist') && await page.isVisible('#fix-aim'), 'the builder and a crosshair');
+  assert.ok(await page.isDisabled('#mk-link'), 'nothing to share yet');
+  await page.fill('#mk-title', 'A short walk');
+  await page.fill('#mk-by', 'Sam');
+  await page.fill('#mk-spot', 'First stop');
+  await page.click('#mk-add');
+  await page.evaluate(() => window.__iso.map.panBy([300, 120], { animate: false }));
+  await page.fill('#mk-spot', 'Second stop');
+  await page.press('#mk-spot', 'Enter');
+  assert.equal(await page.locator('#mk-items li').count(), 2);
+  await page.fill('#mk-items li:nth-child(2) textarea', 'Worth the climb.');
+  await page.click('#mk-items li:nth-child(1) .mk-remove');
+  await page.fill('#mk-spot', 'Third stop');
+  await page.click('#mk-add');
+  await page.click('#mk-link');
+  const url = await page.inputValue('#mk-url');
+  // on a phone the maker sits below the crosshair, so the spot being added stays in view
+  await page.setViewportSize({ width: 390, height: 664 });
+  const card = await page.locator('#mklist').boundingBox(), aim = await page.locator('#fix-aim').boundingBox();
+  assert.ok(card.y > aim.y + aim.height, `maker ${Math.round(card.y)} below crosshair ${Math.round(aim.y + aim.height)}`);
+  assert.match(url, /^http.*#a=0&.*&l=[A-Za-z0-9_-]+$/);
+  const ev = await page.evaluate(() => window.__isoEvents.filter(e => e.event === 'list_shared').map(e => e.props));
+  assert.deepEqual(ev, [{ items: 2 }]);
+  const p2 = await ctx.newPage();
+  await p2.goto(url); await p2.waitForSelector('#vlist', { state: 'visible' });
+  assert.equal(await p2.textContent('#vlist-title'), 'A short walk');
+  assert.deepEqual(await p2.locator('#vlist ol li button .vname').allTextContents(), ['Second stop', 'Third stop']);
+  await p2.click('#vlist ol li:nth-child(1) button');
+  assert.equal(await p2.textContent('#vlist ol li:nth-child(1) .vnote'), 'Worth the climb.');
   assert.deepEqual(errors, []);
   await ctx.close();
 });

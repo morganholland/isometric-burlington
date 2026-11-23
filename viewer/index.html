@@ -86,7 +86,7 @@
     <li><b>Find a place:</b> search any street, address or landmark at the top.</li>
     <li><b>Buses and planes:</b> hover or tap one to see its route or flight.</li>
     <li><b>Keep an eye on the lake:</b> Champ surfaces now and then.</li>
-    <li><b>★</b> lists places worth a look, each with a short note. Tap a pin on the map to read one.</li>
+    <li><b>★</b> lists places worth a look, each with a short note. Tap a pin on the map to read one. You can also make your own list there and share it as a link.</li>
     <li><b>◐</b> switches time of day, weather, names, cars, buses and planes.</li>
     <li><b>Share:</b> the arrow copies a link to exactly this view; the camera saves a picture of it.</li>
   </ul>
@@ -119,6 +119,32 @@
 <section id="places-list" class="card panel places-list" aria-label="Places worth a look" hidden>
   <h2>Places worth a look</h2>
   <ul></ul>
+  <button id="mk-open" class="mk-open" type="button">＋ Make your own list</button>
+</section>
+
+<section id="vlist" class="card vlist" aria-labelledby="vlist-title" hidden>
+  <button id="vlist-close" class="about-close" type="button" aria-label="Close this list">×</button>
+  <p class="eyebrow">A list by a visitor</p>
+  <h2 id="vlist-title"></h2>
+  <p class="vlist-by"></p>
+  <ol></ol>
+  <p class="vlist-foot">Made by someone with the map's list maker, not by the map's author.</p>
+</section>
+
+<section id="mklist" class="card mklist" role="dialog" aria-modal="false" aria-labelledby="mk-heading" hidden>
+  <button id="mk-close" class="about-close" type="button" aria-label="Close">×</button>
+  <h2 id="mk-heading" tabindex="-1">Make a list</h2>
+  <label class="mk-field"><span>Title</span><input id="mk-title" maxlength="80" placeholder="Best spots for a creemee"></label>
+  <label class="mk-field"><span>By <span class="mk-opt">(optional)</span></span><input id="mk-by" maxlength="40" placeholder="A first name or nothing"></label>
+  <ol id="mk-items"></ol>
+  <form id="mk-add-form" class="mk-add">
+    <label class="sr" for="mk-spot">Name the spot under the crosshair</label>
+    <input id="mk-spot" maxlength="60" placeholder="Name the spot under the crosshair">
+    <button id="mk-add" type="submit">Add</button>
+  </form>
+  <p class="mk-help">Move the map to put each spot under the crosshair, name it and add it. Up to 20 spots.</p>
+  <div class="mk-share"><button id="mk-link" type="button" disabled>Get the link</button><input id="mk-url" readonly aria-label="Link to your list" hidden></div>
+  <p class="mk-help">The list lives only in its link: nothing is saved anywhere, and anyone with the link can see it.</p>
 </section>
 
 <section id="place" class="card place-card" role="dialog" aria-modal="false" aria-labelledby="place-title" hidden>
