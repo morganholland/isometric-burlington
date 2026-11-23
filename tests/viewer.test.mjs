@@ -4,6 +4,7 @@ import assert from 'node:assert/strict';
 import { chromium, devices } from 'playwright';
 import { spawn } from 'node:child_process';
 import fs from 'node:fs';
+import { latLonToPx, GROUND_U } from '../viewer/geo.js';
 
 const PORT = 4817, URL0 = `http://127.0.0.1:${PORT}/`;
 let server, browser;
@@ -353,7 +354,9 @@ test('About page on a phone: a sideways swipe moves the cut, an up-and-down swip
 });
 
 test('corrections: "Something wrong here?" sends a note with the spot in the middle of the map', async () => {
-  const { ctx, page, errors } = await open({ viewport: { width: 1280, height: 820 }, hash: '#a=1&x=-900&y=300&z=0' });
+  // the map centred on the Flynn (Main Street), seen from the second side
+  const [fx, fy] = latLonToPx(1, 44.47600, -73.21300, GROUND_U);
+  const { ctx, page, errors } = await open({ viewport: { width: 1280, height: 820 }, hash: `#a=1&x=${Math.round(fx)}&y=${Math.round(fy)}&z=0` });
   await page.click('#about-btn');
   await page.click('#fix-open');
   assert.ok(await page.isHidden('#about'), 'the guide steps aside');
@@ -368,7 +371,7 @@ test('corrections: "Something wrong here?" sends a note with the spot in the mid
   assert.equal(ev.length, 1);
   const st = await page.evaluate(() => { const [x, y] = window.__iso.toPx(window.__iso.map.getCenter()); return { a: window.__iso.state.angle, x: Math.round(x), y: Math.round(y), z: window.__iso.map.getZoom() }; });
   assert.deepEqual([ev[0].note, ev[0].angle, ev[0].x, ev[0].y, ev[0].zoom], ['The church steeple is missing.', st.a, st.x, st.y, st.z]);
-  assert.ok(ev[0].lat > 44.3 && ev[0].lat < 44.6 && ev[0].lon > -73.4 && ev[0].lon < -73.0, 'the spot is in Burlington');
+  assert.ok(Math.abs(ev[0].lat - 44.476) < 1e-4 && Math.abs(ev[0].lon + 73.213) < 1e-4, `the spot is the Flynn (${ev[0].lat}, ${ev[0].lon})`);
   assert.ok(await page.isHidden('#fix') && await page.isHidden('#fix-aim'));
   assert.match(await page.textContent('#toast'), /Thanks/);
   // Escape closes it without sending
@@ -377,6 +380,28 @@ test('corrections: "Something wrong here?" sends a note with the spot in the mid
   await page.keyboard.press('Escape');
   assert.ok(await page.isHidden('#fix'));
   assert.equal(await page.evaluate(() => window.__isoEvents.filter(e => e.event === 'correction_sent').length), 1);
+  assert.deepEqual(errors, []);
+  await ctx.close();
+});
+
+test('corrections: one card at a time, and on a phone the note stays clear of the crosshair', async () => {
+  const { ctx, page, errors } = await open({ ...devices['iPhone 13'] });
+  const openFix = async () => { await page.click('#about-btn'); await page.click('#fix-open'); await page.waitForSelector('#fix', { state: 'visible' }); };
+  await openFix();
+  assert.notEqual(await page.evaluate(() => document.activeElement.id), 'fix-note', 'no keyboard before the map is moved');
+  // the guide, the layers panel and the places list each close the note
+  await page.click('#about-btn');
+  assert.ok(await page.isVisible('#about') && await page.isHidden('#fix') && await page.isHidden('#fix-aim'), 'the guide replaces the note');
+  await page.click('#fix-open');
+  await page.click('#layers-btn');
+  assert.ok(await page.isVisible('#layers') && await page.isHidden('#fix'), 'the layers panel replaces the note');
+  await openFix();
+  assert.ok(await page.isHidden('#layers'), 'the note replaces the layers panel');
+  // with the keyboard up the screen is short: the note must not cover the spot being reported
+  await page.setViewportSize({ width: 390, height: 500 });
+  const card = await page.locator('#fix').boundingBox(), aim = await page.locator('#fix-aim').boundingBox();
+  assert.ok(card.y > aim.y + aim.height || card.y + card.height < aim.y, `note ${Math.round(card.y)}-${Math.round(card.y + card.height)} clear of crosshair ${Math.round(aim.y)}-${Math.round(aim.y + aim.height)}`);
+  assert.ok(await page.locator('#fix-note').evaluate(t => parseFloat(getComputedStyle(t).fontSize) >= 16), 'no zoom-on-focus on iPhone');
   assert.deepEqual(errors, []);
   await ctx.close();
 });
