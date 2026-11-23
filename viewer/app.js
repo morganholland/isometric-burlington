@@ -416,7 +416,7 @@ fetch('labels.json').then(r => r.ok ? r.json() : Promise.reject(new Error(`label
   if (d.places) setupPlaces(d);
 }).catch(() => { labels.data = null; });
 const buses = new BusLayer($('#buses'), map, toLL, () => state.angle, (x, y) => inRegion(state.angle, x, y));
-buses.load('transit.json').catch(() => { buses.data = null; });
+buses.load('transit.json', 'amtrak.json').catch(() => { buses.data = null; });
 const planes = new PlaneLayer($('#planes'), map, toLL, () => state.angle);
 const cars = new CarLayer($('#cars'), map, toLL, () => state.angle, (x, y) => inRegion(state.angle, x, y));
 const moments = new MomentLayer($('#moments'), map, toLL, () => state.angle, (x, y) => inRegion(state.angle, x, y));
@@ -437,7 +437,7 @@ function showTip() {
     tip.querySelector('.sw').style.background = info.color;
     tip.querySelector('b').textContent = info.name;
     tip.querySelector('.long').textContent = info.long;
-    tip.querySelector('.until').textContent = layer === buses ? `On the timetable, in service until ${info.until}` : info.until;
+    tip.querySelector('.until').textContent = info.until;
   }
   tip.hidden = false;
   // beside the pointer, kept on screen
