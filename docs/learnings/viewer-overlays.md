@@ -72,3 +72,9 @@
 - Cards that float over the map should be one at a time; Escape order breaks as soon as two are open.
 - On phones don't focus a text box when a card opens if the person first has to move the map: the keyboard
   comes up and covers it. Text boxes need 16px text or iOS zooms the page on focus.
+
+## Links that carry data (visitor lists, 2026-11-23)
+- Global keyboard shortcuts must skip every text-taking element, not just `input[type=text]`: an `<input>` with no type attribute slipped past and typing "r" turned the map. Test typing with `keyboard.type`, never `page.fill` (fill sends no keydown events).
+- A link meant to show a set of things should not also carry a view (`x/y/z`); otherwise it opens wherever its maker was looking. Boot fits to the things only when the link names no view.
+- When fitting the map around pins, pad on the side the card covers. Decide "phone sheet vs side column" with the same `matchMedia` width the CSS uses; guessing from the card's measured width failed because the phone sheet stops short of the controls column.
+- Cap the encoded length of anything stored in a link (~8 KB) and say so when a link fails to decode: chat apps and texts truncate long links silently.

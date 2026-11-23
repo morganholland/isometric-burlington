@@ -7,7 +7,8 @@
 - Morgan said yes to every recommended answer (2026-11-23).
 - Slice 1 (snow on the ground, fireworks, Champ, holiday lights): live on isoburlington.com since 2026-11-23 (PR #4).
 - Slice 2 (About page: numbers, change log, drag-to-compare): live since 2026-11-23 (PR #5).
-- Slice 3 (corrections): built and tested, PR #6.
+- Slice 3 (corrections): live since 2026-11-23 (PR #6); notes collect in the PostHog insight "Map corrections from visitors".
+- Slice 4 (visitor lists): built and tested, PR #7.
 - Slice 7 (live buses) waits on a free Swiftly key only Morgan can request: see `OWED.md`.
 - Rules: spend nothing, free feeds only, never cap zoom, say plainly on the site what is simulated or timetabled.
 
@@ -42,6 +43,11 @@ Each slice is its own small pull request, merged when its tests are green and it
 9. A visitor picks places (the hand-picked ones or anything found by search), adds a title, a "by" line and
    notes, and gets a link. The list lives in the link: no accounts, no database.
 10. Opening such a link shows the list as "a list by a visitor", clearly apart from the map's own places.
+    Built as: ★ panel → "Make your own list" (title, optional by-line, spots added from under a crosshair, a
+    note each, up to 20). `viewer/lists.js` packs it as base64url JSON in the link's `l` parameter, cut to
+    fixed sizes, spots outside the drawn area dropped, anything malformed is no list at all (fast-check in
+    `tests/lists.test.mjs`). Shown in its own card with numbered round pins, all text set as text, never markup.
+    Analytics counts only how many spots (`list_opened`, `list_shared`), never the words.
 
 ## Slice 5: the train
 11. Amtrak's Ethan Allen Express arrives at and leaves Union Station on its published timetable, labelled

@@ -10,7 +10,8 @@ import { CarLayer } from './traffic.js';
 import { LightLayer, litShare } from './lights.js';
 import { burlingtonClock } from './transit.js';
 import { correction } from './fix.js';
-import { viewHash, readViewHash, readMoment, shareLink, snapshot, deliver } from './share.js';
+import { encodeList, decodeList, LINK_MAX } from './lists.js';
+import { viewHash, readViewHash, readList, listAngle, readMoment, shareLink, snapshot, deliver } from './share.js';
 import { MomentLayer, groundSnow, fetchSnowDepth, FW_SITE, CHAMP_SPOTS } from './moments.js';
 import { initTracking, track } from './track.js';
 
@@ -88,6 +89,7 @@ function showAngle(a, centerPx, zoom) {
   labels.draw();
   cars.aim();
   if (places.list.length) drawPlaces();
+  drawVisitorPins();
   saveHash();
 }
 
@@ -106,7 +108,7 @@ function rotate(dir) {
 function saveHash() {
   if (!map._loaded) return;
   const [x, y] = toPx(map.getCenter());
-  history.replaceState(null, '', viewHash({ angle: state.angle, x, y, zoom: map.getZoom(), time: state.timeMode, moment: state.moment }));
+  history.replaceState(null, '', viewHash({ angle: state.angle, x, y, zoom: map.getZoom(), time: state.timeMode, moment: state.moment, list: vlist.code }));
 }
 const readHash = () => readViewHash(location.hash);
 map.on('moveend', saveHash);
@@ -247,6 +249,147 @@ $('#show-places').addEventListener('change', drawPlaces);
 $('#places-btn').addEventListener('click', () => {
   const l = $('#places-list'); l.hidden = !l.hidden; $('#places-btn').setAttribute('aria-expanded', String(!l.hidden));
   if (!l.hidden) { hideFix(); $('#layers').hidden = true; $('#layers-btn').setAttribute('aria-expanded', 'false'); l.querySelector('button')?.focus(); }
+});
+
+// ---------- visitors' lists: shown from a link, made in the ★ panel; the list lives only in the link ----------
+const vlist = { code: null, list: null, markers: [], on: -1 };
+function showVisitorList(code, fit) {
+  const l = decodeList(code);
+  if (!l) return false;
+  vlist.code = code; vlist.list = l; vlist.on = -1;
+  $('#vlist-title').textContent = l.title || 'A list';
+  $('#vlist .vlist-by').textContent = l.by ? `by ${l.by}` : '';
+  $('#vlist .vlist-by').hidden = !l.by;
+  const ol = $('#vlist ol'); ol.textContent = '';
+  l.items.forEach((it, i) => {
+    const li = document.createElement('li'), b = document.createElement('button'), num = document.createElement('span'), name = document.createElement('span');
+    b.type = 'button'; b.setAttribute('aria-expanded', 'false');
+    num.className = 'vnum'; num.textContent = i + 1; name.className = 'vname'; name.textContent = it.name;
+    b.append(num, name); b.addEventListener('click', () => pickVisitorItem(i, true));
+    li.appendChild(b);
+    if (it.note) { const p = document.createElement('p'); p.className = 'vnote'; p.textContent = it.note; p.hidden = true; li.appendChild(p); }
+    ol.appendChild(li);
+  });
+  $('#vlist').hidden = false;
+  $('#hint').hidden = true;   // the list is what this visitor came for
+  drawVisitorPins();
+  if (fit) {
+    const pts = l.items.map(it => toLL(...latLonToPx(state.angle, it.lat, it.lon, GROUND_U)));
+    if (pts.length === 1) map.setView(pts[0], -0.5, { animate: false });
+    else {
+      // keep the pins clear of the card: a bottom sheet on phones, a column on the left elsewhere
+      const r = $('#vlist').getBoundingClientRect(), sheet = matchMedia('(max-width: 640px)').matches;   // same break as the CSS
+      const pad = sheet ? { paddingTopLeft: [40, 150], paddingBottomRight: [80, innerHeight - r.top + 30] }
+        : { paddingTopLeft: [r.right + 40, 90], paddingBottomRight: [70, 90] };
+      map.fitBounds(L.latLngBounds(pts), { ...pad, maxZoom: -0.5, animate: false });
+    }
+  }
+  saveHash();
+  return true;
+}
+function drawVisitorPins() {
+  const focused = document.activeElement?.closest?.('.vpin')?.dataset.i;
+  for (const m of vlist.markers) map.removeLayer(m);
+  vlist.markers = [];
+  if (!vlist.list) return;
+  vlist.list.items.forEach((it, i) => {
+    const [x, y] = latLonToPx(state.angle, it.lat, it.lon, GROUND_U);
+    const icon = L.divIcon({ className: 'vpin-wrap', iconSize: [0, 0], html: `<button type="button" class="vpin${i === vlist.on ? ' on' : ''}" data-i="${i}"${i === vlist.on ? ' aria-current="true"' : ''} aria-label="${i + 1}: ${esc(it.name)}">${i + 1}</button>` });
+    const m = L.marker(toLL(x, y), { icon, keyboard: false, zIndexOffset: 600 }).addTo(map);
+    m.on('click', () => pickVisitorItem(i, false));
+    vlist.markers.push(m);
+  });
+  // turning the map rebuilds the pins: keep keyboard focus on the same one
+  if (focused != null) document.querySelector(`.vpin[data-i="${focused}"]`)?.focus();
+}
+function pickVisitorItem(i, fly) {
+  vlist.on = i;
+  document.querySelectorAll('#vlist li').forEach((li, j) => {
+    li.querySelector('button').setAttribute('aria-expanded', String(j === i));
+    const n = li.querySelector('.vnote'); if (n) n.hidden = j !== i;
+  });
+  vlist.markers.forEach((m, j) => {
+    const b = m.getElement()?.querySelector('.vpin');
+    if (!b) return;
+    b.classList.toggle('on', j === i);
+    if (j === i) b.setAttribute('aria-current', 'true'); else b.removeAttribute('aria-current');
+  });
+  const it = vlist.list.items[i];
+  if (fly) map.flyTo(toLL(...latLonToPx(state.angle, it.lat, it.lon, GROUND_U)), Math.max(map.getZoom(), -0.5), { duration: 1.1 });
+  else $('#vlist ol').children[i]?.scrollIntoView({ block: 'nearest' });
+}
+function closeVisitorList() {
+  vlist.code = vlist.list = null; vlist.on = -1;
+  for (const m of vlist.markers) map.removeLayer(m);
+  vlist.markers = [];
+  $('#vlist').hidden = true;
+  saveHash();
+  $('#places-btn').focus();
+}
+$('#vlist-close').addEventListener('click', closeVisitorList);
+
+// the list maker
+const mk = { items: [] };
+function showMaker(open) {
+  if (!open) { $('#mklist').hidden = true; if ($('#fix').hidden) $('#fix-aim').hidden = true; if (vlist.list) $('#vlist').hidden = false; return; }
+  $('#vlist').hidden = true;                    // a list being viewed comes back when the maker closes
+  hideFix(); showAbout(false); closePlace(); closePlacesList();
+  $('#layers').hidden = true; $('#layers-btn').setAttribute('aria-expanded', 'false');
+  $('#hint').hidden = true;
+  $('#mklist').hidden = $('#fix-aim').hidden = false;
+  suggestSpotName();
+  (matchMedia('(pointer: coarse)').matches ? $('#mk-heading') : $('#mk-title')).focus();
+  track('list_maker_opened');
+}
+// a name for the spot under the crosshair: the search result or hand-picked place sitting there, if any
+function suggestSpotName() {
+  if ($('#mklist').hidden || $('#mk-spot').value.trim()) return;
+  const c = map.latLngToContainerPoint(map.getCenter());
+  const near = (lat, lon) => { const p = map.latLngToContainerPoint(toLL(...latLonToPx(state.angle, lat, lon, GROUND_U))); return Math.hypot(p.x - c.x, p.y - c.y) < 40; };
+  const hit = (state.marker && near(state.marker.lat, state.marker.lon) && state.marker.label) || places.list.find(p => near(p.lat, p.lon))?.name;
+  if (hit) $('#mk-spot').value = hit;
+}
+map.on('moveend', suggestSpotName);
+function drawMaker() {
+  const ol = $('#mk-items'); ol.textContent = '';
+  mk.items.forEach((it, i) => {
+    const li = document.createElement('li'), row = document.createElement('div'), name = document.createElement('span'), rm = document.createElement('button'), note = document.createElement('textarea');
+    row.className = 'mk-row'; name.className = 'mk-name'; name.textContent = it.name;
+    rm.type = 'button'; rm.className = 'mk-remove'; rm.textContent = 'Remove'; rm.setAttribute('aria-label', `Remove ${it.name}`);
+    rm.addEventListener('click', () => { mk.items.splice(i, 1); drawMaker(); $('#mk-spot').focus(); });
+    note.maxLength = 240; note.placeholder = 'A note (optional)'; note.value = it.note; note.setAttribute('aria-label', `Note for ${it.name}`);
+    note.addEventListener('input', () => { it.note = note.value; resetLink(); });
+    row.append(name, rm); li.append(row, note); ol.appendChild(li);
+  });
+  $('#mk-add').disabled = mk.items.length >= 20;
+  resetLink();
+}
+function resetLink() { $('#mk-link').disabled = !mk.items.length; $('#mk-url').hidden = true; }
+$('#mk-open').addEventListener('click', () => showMaker(true));
+$('#mk-close').addEventListener('click', () => { showMaker(false); $('#places-btn').focus(); });
+$('#mk-title').addEventListener('input', resetLink);
+$('#mk-by').addEventListener('input', resetLink);
+$('#mk-add-form').addEventListener('submit', e => {
+  e.preventDefault();
+  const name = $('#mk-spot').value.trim();
+  if (!name || mk.items.length >= 20) { $('#mk-spot').focus(); return; }
+  const [x, y] = toPx(map.getCenter());
+  const [lat, lon] = enuToLla(...pxToEnu(state.angle, x, y, GROUND_U));
+  mk.items.push({ name, note: '', lat, lon });
+  $('#mk-spot').value = '';
+  drawMaker();
+  $('#mk-spot').focus();
+});
+$('#mk-link').addEventListener('click', async () => {
+  const code = encodeList({ title: $('#mk-title').value, by: $('#mk-by').value, items: mk.items });
+  // chat apps and texts cut very long links short
+  if (code.length > LINK_MAX) { toast('This list is too long for a link: shorten some notes'); return; }
+  // no view in the link, so it opens with the whole list fitted to the visitor's screen
+  const url = location.origin + location.pathname + `#a=${state.angle}&l=${code}`;
+  const u = $('#mk-url'); u.value = url; u.hidden = false; u.select();
+  track('list_shared', { items: decodeList(code)?.items.length || 0 });
+  const how = await shareLink(url);
+  toast(how === 'copied' ? 'Link copied: anyone with it sees your list' : how === 'shared' ? 'Shared' : 'Copy the link from the box');
 });
 
 // ---------- sky: night + weather ----------
@@ -424,7 +567,7 @@ const store = { get: k => { try { return localStorage.getItem(k); } catch { retu
 function showAbout(open) {
   $('#about').hidden = !open;
   $('#about-btn').setAttribute('aria-expanded', String(open));
-  if (open) { hideFix(); hideHint(); $('#about-close').focus(); track('about_opened'); }
+  if (open) { hideFix(); showMaker(false); hideHint(); $('#about-close').focus(); track('about_opened'); }
 }
 function hideHint() { if (!$('#hint').hidden) { $('#hint').hidden = true; store.set('iso-hint-seen', '1'); } }
 if (!store.get('iso-hint-seen')) {
@@ -440,10 +583,10 @@ $('#about-close').addEventListener('click', () => { showAbout(false); $('#about-
 
 // ---------- corrections: a note about the spot under the crosshair ----------
 // one card at a time: the note closes the guide, the place card and the panels, and they close it
-function hideFix() { $('#fix').hidden = $('#fix-aim').hidden = true; }
+function hideFix() { $('#fix').hidden = true; if ($('#mklist').hidden) $('#fix-aim').hidden = true; }
 function showFix(open) {
   if (!open) { hideFix(); return; }
-  showAbout(false); closePlace(); closePlacesList();
+  showMaker(false); showAbout(false); closePlace(); closePlacesList();
   $('#layers').hidden = true; $('#layers-btn').setAttribute('aria-expanded', 'false');
   $('#hint').hidden = true;                 // out of the way for now; it may still show on a later visit
   $('#fix').hidden = $('#fix-aim').hidden = false;
@@ -467,11 +610,14 @@ $('#fix-form').addEventListener('submit', e => {
 });
 
 addEventListener('keydown', e => {
+  if (e.key === 'Escape' && !$('#place').hidden) { closePlace(); return; }
+  if (e.key === 'Escape' && !$('#mklist').hidden) { showMaker(false); $('#places-btn').focus(); return; }
   if (e.key === 'Escape' && !$('#fix').hidden) { showFix(false); $('#about-btn').focus(); return; }
   if (e.key === 'Escape' && !$('#about').hidden) { showAbout(false); $('#about-btn').focus(); return; }
-  if (e.key === 'Escape' && !$('#place').hidden) { closePlace(); return; }
   if (e.key === 'Escape' && !$('#places-list').hidden) { closePlacesList(); $('#places-btn').focus(); return; }
-  if (e.target.matches('input[type=search], input[type=text], textarea')) return;
+  if (e.key === 'Escape' && !$('#vlist').hidden) { closeVisitorList(); return; }
+  // typing, not a shortcut (any box that takes text; a focused checkbox or radio still lets the keys through)
+  if (e.target.closest('textarea, select, [contenteditable]') || (e.target.matches('input') && !/^(checkbox|radio|button|submit|range)$/.test(e.target.type))) return;
   if (e.key === '?') { showAbout($('#about').hidden); return; }
   if (e.key === 'r' || e.key === ']') rotate(1);
   if (e.key === 'R' || e.key === '[') rotate(-1);
@@ -487,6 +633,7 @@ async function loadManifest() {
 
 (async function boot() {
   const wantFix = new URLSearchParams(location.hash.slice(1)).has('fix');   // read before anything rewrites the address
+  const listCode = readList(location.hash);
   state.manifest = await loadManifest();
   const any = state.manifest && state.manifest.angles && state.manifest.angles.some(Boolean);
   $('#drawing').hidden = !!any;
@@ -498,18 +645,21 @@ async function loadManifest() {
   if (state.moment && state.moment !== 'champ' && !(h && h.t !== 'live')) { state.timeMode = 'night'; $('input[name=time][value=night]').checked = true; }
   if (h) showAngle(h.a, [h.x, h.y], h.z);
   else {
-    showAngle(0, null);
+    showAngle(listCode ? listAngle(location.hash) : 0, null);
     // open on downtown and the waterfront, or on the moment a link asks for
     if (any) {
       const [lat, lon, u, z] = state.moment === 'fireworks' ? [...FW_SITE, 200, -1.75] : state.moment === 'champ' ? [...CHAMP_SPOTS[0], 0, -1.25] : [44.4759, -73.2160, 32, -2.5];
-      const [x, y] = latLonToPx(0, lat, lon, u);
+      const [x, y] = latLonToPx(state.angle, lat, lon, u);
       map.setView(toLL(x, y), z, { animate: false });
     } else {
-      map.fitBounds(L.latLngBounds(grid.angles[0].region.map(([x, y]) => toLL(x, y))), { padding: [40, 40], animate: false });
+      map.fitBounds(L.latLngBounds(grid.angles[state.angle].region.map(([x, y]) => toLL(x, y))), { padding: [40, 40], animate: false });
     }
   }
   // the About page's "tell me what's wrong" link opens the note; the link itself is not kept
   if (wantFix) { saveHash(); showFix(true); }
+  // a visitor's list in the link: show it, and fit it to the screen unless the link also names a view
+  if (listCode && showVisitorList(listCode, !h)) track('list_opened', { items: vlist.list.items.length });
+  else if (listCode) toast('This list link looks cut short: ask for it again');
   setPaper();
   refreshWeather();
   const st = sunTimes();

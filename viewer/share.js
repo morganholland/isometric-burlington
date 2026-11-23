@@ -3,9 +3,18 @@
 // The address of a view. `time` is 'live', 'day' or 'night': a forced time of day travels with the link,
 // so a night view opens as night. `moment` ('fireworks', 'champ' or 'holiday') asks for a local moment on any day.
 const MOMENTS = ['fireworks', 'champ', 'holiday'];
-export function viewHash({ angle, x, y, zoom, time, moment }) {
+export function viewHash({ angle, x, y, zoom, time, moment, list }) {
   return `#a=${angle}&x=${Math.round(x)}&y=${Math.round(y)}&z=${zoom}` + (time === 'day' || time === 'night' ? `&t=${time}` : '')
-    + (MOMENTS.includes(moment) ? `&m=${moment}` : '');
+    + (MOMENTS.includes(moment) ? `&m=${moment}` : '') + (list && /^[A-Za-z0-9_-]+$/.test(list) ? `&l=${list}` : '');
+}
+// a visitor's list (see lists.js) travels in the link as `l`
+export function readList(hash) {
+  return new URLSearchParams(String(hash).replace(/^#/, '')).get('l') || null;
+}
+// the angle a list link without a view asks for
+export function listAngle(hash) {
+  const a = Math.round(Number(new URLSearchParams(String(hash).replace(/^#/, '')).get('a')));
+  return Number.isFinite(a) ? ((a % 4) + 4) % 4 : 0;
 }
 // the moment a link asks for, with or without a view in it
 export function readMoment(hash) {
