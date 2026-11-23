@@ -115,3 +115,7 @@
   `dblclick`/`zoomstart`. A tap that closes an open panel should only close it.
 - A function keyed by exact coordinates can be called with endless near-duplicates that miss the CDN cache;
   refuse more than 5 decimals so the client's rounding is the only form.
+- Once a tap waits (a delay, a first-time download, a lookup), everything that used to happen at tap time has to
+  be re-checked when the answer lands: the person may have opened another card, pressed Escape or zoomed out
+  meanwhile. Cancel the timer and bump the sequence number in the one close function, and drop the answer if
+  anything else is open by then.

@@ -174,6 +174,13 @@ test('tap a building: the one you see, its public record, outlined, with no owne
   await page.keyboard.press('Escape');
   assert.ok(await page.isHidden('#bldg'));
   assert.equal(await page.locator('path.bldg-outline').count(), 0);
+  assert.equal(await page.evaluate(() => document.activeElement.id), 'map', 'Escape hands focus back to the map');
+  // a tap followed at once by "make a list" opens the list maker, not a card on top of it
+  await page.mouse.click(...await onScreen(page, roof.px));
+  await page.click('#places-btn'); await page.click('#mk-open');
+  await page.waitForTimeout(900);
+  assert.ok(await page.isHidden('#bldg')); assert.ok(await page.isVisible('#mklist'));
+  await page.click('#mk-close');
   // with the layers panel open, a tap on the map only closes it
   await page.click('#layers-btn');
   assert.ok(await page.isVisible('#layers'));
@@ -208,6 +215,11 @@ test('phone: a building card hides a list being viewed, and gives it back when c
   assert.ok(await page.isHidden('#vlist'), 'the list steps aside');
   await page.click('#bldg-close');
   assert.ok(await page.isVisible('#vlist'), 'and comes back');
+  // the list maker opened from a building card keeps the list out of its way
+  await page.mouse.click(...await onScreen(page, roof.px));
+  await page.waitForSelector('#bldg:not([hidden])');
+  await page.evaluate(() => document.querySelector('#mk-open').click());   // the maker's own button, wherever it sits
+  assert.ok(await page.isVisible('#mklist')); assert.ok(await page.isHidden('#vlist')); assert.ok(await page.isHidden('#bldg'));
   assert.deepEqual(errors, []);
   await ctx.close();
 });

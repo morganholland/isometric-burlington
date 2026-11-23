@@ -101,7 +101,7 @@ test('the card: address first, then what it is and when it was built; nothing wi
 test('the lookup takes one or two points inside the map, to at most 5 decimals', () => {
   assert.deepEqual(parsePoints('44.478,-73.2128'), [[44.478, -73.2128]]);
   assert.deepEqual(parsePoints('44.478,-73.2128;44.4781,-73.213'), [[44.478, -73.2128], [44.4781, -73.213]]);
-  for (const bad of [undefined, '', '44.478', '44.478,-73.2,1', 'a,b', '40.7,-74.0', '44.478,-73.2128;44.4781,-73.213;44.478,-73.2128', '44.4781234,-73.21', '0x2c,-73.21', '44.47,', 'x'.repeat(500)]) assert.equal(parsePoints(bad), null, String(bad));
+  for (const bad of [undefined, '', '44.478', '44.478,-73.2,1', 'a,b', '40.7,-74.0', '44.478,-73.2128;44.4781,-73.213;44.478,-73.2128', '44.4781234,-73.21', '44.47810,-73.21', '44.4781,-73.2100', '0x2c,-73.21', '44.47,', 'x'.repeat(500)]) assert.equal(parsePoints(bad), null, String(bad));
 });
 
 test('owners and values never leave the function, whatever the records hold', () => {
@@ -186,6 +186,12 @@ test('the handler refuses points off the map, caches answers for a week and fail
     globalThis.fetch = fakeArcgis({ 'vt:44.49,-73.186': [{ E911ADDR: '48 MAIN STREET', TNAME: 'WINOOSKI', CAT: 'C' }] });
     const ok = res(); await handler({ query: { pts: '44.49,-73.186' } }, ok);
     assert.equal(ok.code, 200); assert.match(ok.headers['Cache-Control'], /s-maxage=604800/);
+    const extra = res(); await handler({ query: { pts: '44.49,-73.186', z: '1' } }, extra);
+    assert.equal(extra.code, 400, 'extra parameters would only dodge the cache');
+    // the city's record down: the state's answer, kept a minute
+    globalThis.fetch = async url => url.startsWith(SOURCES.btv.url) ? { ok: false, status: 500 } : fakeArcgis({ 'vt:44.4701,-73.21': [{ E911ADDR: '12 MAPLE ST', TNAME: 'Burlington', CAT: 'R1' }] })(url);
+    const half = res(); await handler({ query: { pts: '44.4701,-73.21' } }, half);
+    assert.equal(half.code, 200); assert.equal(half.body.address, '12 Maple St'); assert.equal(half.headers['Cache-Control'], 's-maxage=60');
     globalThis.fetch = async () => ({ ok: false, status: 503 });
     const down = res(); await handler({ query: { pts: '44.49,-73.186' } }, down);
     assert.equal(down.code, 503); assert.equal(down.headers['Cache-Control'], 's-maxage=60'); assert.equal(down.body.found, false);

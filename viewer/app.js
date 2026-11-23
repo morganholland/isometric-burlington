@@ -250,7 +250,7 @@ $('#map').addEventListener('keydown', e => {
 $('#show-places').addEventListener('change', drawPlaces);
 $('#places-btn').addEventListener('click', () => {
   const l = $('#places-list'); l.hidden = !l.hidden; $('#places-btn').setAttribute('aria-expanded', String(!l.hidden));
-  if (!l.hidden) { hideFix(); $('#layers').hidden = true; $('#layers-btn').setAttribute('aria-expanded', 'false'); l.querySelector('button')?.focus(); }
+  if (!l.hidden) { hideFix(); closeBuilding(); $('#layers').hidden = true; $('#layers-btn').setAttribute('aria-expanded', 'false'); l.querySelector('button')?.focus(); }
 });
 
 // ---------- visitors' lists: shown from a link, made in the ★ panel; the list lives only in the link ----------
@@ -334,8 +334,9 @@ $('#vlist-close').addEventListener('click', closeVisitorList);
 const mk = { items: [] };
 function showMaker(open) {
   if (!open) { $('#mklist').hidden = true; if ($('#fix').hidden) $('#fix-aim').hidden = true; if (vlist.list) $('#vlist').hidden = false; return; }
+  closeBuilding();
   $('#vlist').hidden = true;                    // a list being viewed comes back when the maker closes
-  hideFix(); showAbout(false); closePlace(); closePlacesList(); closeBuilding();
+  hideFix(); showAbout(false); closePlace(); closePlacesList();
   $('#layers').hidden = true; $('#layers-btn').setAttribute('aria-expanded', 'false');
   $('#hint').hidden = true;
   $('#mklist').hidden = $('#fix-aim').hidden = false;
@@ -461,7 +462,7 @@ map.on('click', busTip);
 let streetPts = [];
 const bldg = { seq: 0, outline: null, h: 0, layer: null, index: null, loading: null, vlistHidden: false, timer: 0 };
 function closeBuilding() {
-  bldg.seq++; bldg.outline = null; $('#map').classList.remove('looking');
+  clearTimeout(bldg.timer); bldg.seq++; bldg.outline = null; $('#map').classList.remove('looking');
   if (bldg.layer) { map.removeLayer(bldg.layer); bldg.layer = null; }
   $('#bldg').hidden = true;
   if (bldg.vlistHidden) { bldg.vlistHidden = false; if (vlist.list && $('#mklist').hidden) $('#vlist').hidden = false; }
@@ -476,7 +477,10 @@ function buildingIndex() {
   bldg.loading ||= fetch('buildings.json').then(r => r.ok ? r.json() : null).then(d => (bldg.index = d ? indexBuildings(d) : null)).catch(() => null);
   return bldg.loading;
 }
+// anything open that a tap on the map should leave alone
+const busyElsewhere = () => ['#place', '#places-list', '#mklist', '#fix', '#about', '#layers'].some(s => !$(s).hidden);
 async function openBuilding(cx, cy) {
+  if (map.getZoom() < -1.5 || busyElsewhere()) return;
   const [x, y] = toPx(map.containerPointToLatLng([cx, cy]));
   if (!inRegion(state.angle, x, y)) return;
   const seq = ++bldg.seq, angle = state.angle;
@@ -503,7 +507,7 @@ async function lookUp(seq, angle, x, y) {
     toast(down ? 'Couldn’t reach the public records just now. Try again in a minute.' : hit.building ? 'No public record for that building' : 'No building there');
     return;
   }
-  hideFix(); closePlace(); closePlacesList();
+  if (busyElsewhere()) { closeBuilding(); return; }   // something else was opened while this was out
   if (!$('#vlist').hidden && matchMedia('(max-width: 640px)').matches) { $('#vlist').hidden = true; bldg.vlistHidden = true; }   // both sit at the bottom on a phone
   $('#bldg-title').textContent = card.title;
   $('#bldg .bldg-town').textContent = card.town;
@@ -646,7 +650,7 @@ const store = { get: k => { try { return localStorage.getItem(k); } catch { retu
 function showAbout(open) {
   $('#about').hidden = !open;
   $('#about-btn').setAttribute('aria-expanded', String(open));
-  if (open) { hideFix(); showMaker(false); hideHint(); $('#about-close').focus(); track('about_opened'); }
+  if (open) { hideFix(); showMaker(false); closeBuilding(); hideHint(); $('#about-close').focus(); track('about_opened'); }
 }
 function hideHint() { if (!$('#hint').hidden) { $('#hint').hidden = true; store.set('iso-hint-seen', '1'); } }
 if (!store.get('iso-hint-seen')) {
@@ -690,7 +694,8 @@ $('#fix-form').addEventListener('submit', e => {
 
 addEventListener('keydown', e => {
   if (e.key === 'Escape' && !$('#place').hidden) { closePlace(); return; }
-  if (e.key === 'Escape' && !$('#bldg').hidden) { closeBuilding(); return; }
+  if (e.key === 'Escape' && !$('#bldg').hidden) { closeBuilding(); $('#map').focus(); return; }
+  if (e.key === 'Escape' && $('#map').classList.contains('looking')) { closeBuilding(); return; }   // a lookup still out
   if (e.key === 'Escape' && !$('#mklist').hidden) { showMaker(false); $('#places-btn').focus(); return; }
   if (e.key === 'Escape' && !$('#fix').hidden) { showFix(false); $('#about-btn').focus(); return; }
   if (e.key === 'Escape' && !$('#about').hidden) { showAbout(false); $('#about-btn').focus(); return; }

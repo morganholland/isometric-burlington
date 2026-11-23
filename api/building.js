@@ -20,7 +20,7 @@ export const SOURCES = {
     fields: 'E911ADDR,TNAME,CAT',
   },
 };
-const TIMEOUT_MS = 4000;
+const TIMEOUT_MS = 3000;                 // up to three calls in a row stay under Vercel's 10 s
 const MAX_PTS = 2;
 const BOX = { lat: [44.35, 44.6], lon: [-73.35, -73.05] };   // the drawn area and a margin
 
@@ -28,8 +28,8 @@ const BOX = { lat: [44.35, 44.6], lon: [-73.35, -73.05] };   // the drawn area a
 export function parsePoints(s) {
   if (typeof s !== 'string' || s.length > 400) return null;
   const raw = s.split(';').filter(Boolean).map(p => p.split(','));
-  // at most 5 decimals (about a metre): finer points would only dodge the shared cache
-  if (raw.some(p => p.some(x => !/^-?\d{1,3}(\.\d{1,5})?$/.test(x)))) return null;
+  // at most 5 decimals (about a metre) and no trailing zeros: one spelling per point, so it shares the cache
+  if (raw.some(p => p.some(x => !/^-?\d{1,3}(\.\d{0,4}[1-9])?$/.test(x)))) return null;
   const pts = raw.map(p => p.map(Number));
   if (!pts.length || pts.length > MAX_PTS) return null;
   for (const p of pts) {
@@ -145,7 +145,8 @@ export async function lookup(pts, fetchImpl = fetch) {
 }
 
 export default async function handler(req, res) {
-  const pts = parsePoints(req.query && req.query.pts);
+  const q = req.query || {};
+  const pts = Object.keys(q).every(k => k === 'pts') ? parsePoints(q.pts) : null;   // extra parameters only dodge the cache
   if (!pts) { res.status(400).json({ found: false, error: 'pts must be one or two lat,lon pairs inside the map' }); return; }
   try {
     const out = await lookup(pts);
