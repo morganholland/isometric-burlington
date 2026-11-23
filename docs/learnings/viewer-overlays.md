@@ -61,3 +61,14 @@
   an iPhone device context; this produces both pointer events and native page scrolling.
 - Test the cut by what is drawn (computed `clip-path`, knob position), not the CSS variable the script writes.
 - Numbers on a page drift from the data: test them by recomputing from the same files the map uses.
+
+## Turning a map pixel back into a place
+- A map pixel is a ray, not a point: at 30° down, guessing the ground 40 m too low puts the spot ~70 m off
+  (u·cot 30°). Use the one shared `GROUND_U` from `viewer/geo.js` everywhere a pixel becomes lat/lon (turning,
+  search pins, corrections), and test against a known place at that height, not a round trip at u = 0.
+- Analytics strips the map position from every URL; an event that is *about* a place (a correction) has to be
+  let through on purpose (`stripHash` keeps only that event's `link`). `window.__isoEvents` records props before
+  PostHog's `before_send`, so only the unit test in `tests/track.test.mjs` covers the stripping.
+- Cards that float over the map should be one at a time; Escape order breaks as soon as two are open.
+- On phones don't focus a text box when a card opens if the person first has to move the map: the keyboard
+  comes up and covers it. Text boxes need 16px text or iOS zooms the page on focus.

@@ -1,6 +1,6 @@
 import L from 'leaflet';
 import grid from './grid-lite.json';
-import { latLonToPx, pxToEnu, enuToPx, enuToLla, GRID } from './geo.js';
+import { latLonToPx, pxToEnu, enuToPx, enuToLla, GRID, GROUND_U } from './geo.js';
 import { nightFactor, fetchWeather, sunTimes } from './sky.js';
 import { WeatherFX } from './fx.js';
 import { BusLayer } from './transit.js';
@@ -9,6 +9,7 @@ import { LabelLayer } from './labels.js';
 import { CarLayer } from './traffic.js';
 import { LightLayer, litShare } from './lights.js';
 import { burlingtonClock } from './transit.js';
+import { correction } from './fix.js';
 import { viewHash, readViewHash, readMoment, shareLink, snapshot, deliver } from './share.js';
 import { MomentLayer, groundSnow, fetchSnowDepth, FW_SITE, CHAMP_SPOTS } from './moments.js';
 import { initTracking, track } from './track.js';
@@ -16,7 +17,6 @@ import { initTracking, track } from './track.js';
 initTracking();
 
 const TILE_BASE = (window.ISO_CONFIG && window.ISO_CONFIG.tileBase) || '';
-const GROUND_U = 40;           // typical ground height (m) used when turning the map
 const $ = s => document.querySelector(s);
 
 const state = {
@@ -184,6 +184,7 @@ function drawPlaces() {
   labels.draw();
 }
 function openPlace(i, via, opener) {
+  hideFix();
   const p = places.list[i];
   places.open = i;
   places.opener = opener || null;
@@ -245,7 +246,7 @@ $('#map').addEventListener('keydown', e => {
 $('#show-places').addEventListener('change', drawPlaces);
 $('#places-btn').addEventListener('click', () => {
   const l = $('#places-list'); l.hidden = !l.hidden; $('#places-btn').setAttribute('aria-expanded', String(!l.hidden));
-  if (!l.hidden) { $('#layers').hidden = true; $('#layers-btn').setAttribute('aria-expanded', 'false'); l.querySelector('button')?.focus(); }
+  if (!l.hidden) { hideFix(); $('#layers').hidden = true; $('#layers-btn').setAttribute('aria-expanded', 'false'); l.querySelector('button')?.focus(); }
 });
 
 // ---------- sky: night + weather ----------
@@ -354,7 +355,7 @@ $('#rot-left').addEventListener('click', () => rotate(-1));
 $('#rot-right').addEventListener('click', () => rotate(1));
 $('#zoom-in').addEventListener('click', () => map.zoomIn());
 $('#zoom-out').addEventListener('click', () => map.zoomOut());
-$('#layers-btn').addEventListener('click', () => { const p = $('#layers'); p.hidden = !p.hidden; $('#layers-btn').setAttribute('aria-expanded', String(!p.hidden)); if (!p.hidden) { $('#places-list').hidden = true; $('#places-btn').setAttribute('aria-expanded', 'false'); } });
+$('#layers-btn').addEventListener('click', () => { const p = $('#layers'); p.hidden = !p.hidden; $('#layers-btn').setAttribute('aria-expanded', String(!p.hidden)); if (!p.hidden) { hideFix(); $('#places-list').hidden = true; $('#places-btn').setAttribute('aria-expanded', 'false'); } });
 document.querySelectorAll('input[name=time]').forEach(i => i.addEventListener('change', () => { state.timeMode = i.value; forgetMoment(); applySky(); saveHash(); }));
 document.querySelectorAll('input[name=wx]').forEach(i => i.addEventListener('change', () => { state.weatherMode = i.value; applySky(); }));
 // ---------- share a link to this view, save a picture of it ----------
@@ -423,7 +424,7 @@ const store = { get: k => { try { return localStorage.getItem(k); } catch { retu
 function showAbout(open) {
   $('#about').hidden = !open;
   $('#about-btn').setAttribute('aria-expanded', String(open));
-  if (open) { hideHint(); $('#about-close').focus(); track('about_opened'); }
+  if (open) { hideFix(); hideHint(); $('#about-close').focus(); track('about_opened'); }
 }
 function hideHint() { if (!$('#hint').hidden) { $('#hint').hidden = true; store.set('iso-hint-seen', '1'); } }
 if (!store.get('iso-hint-seen')) {
@@ -437,7 +438,36 @@ $('#hint-more').addEventListener('click', () => showAbout(true));
 $('#about-btn').addEventListener('click', () => showAbout($('#about').hidden));
 $('#about-close').addEventListener('click', () => { showAbout(false); $('#about-btn').focus(); });
 
+// ---------- corrections: a note about the spot under the crosshair ----------
+// one card at a time: the note closes the guide, the place card and the panels, and they close it
+function hideFix() { $('#fix').hidden = $('#fix-aim').hidden = true; }
+function showFix(open) {
+  if (!open) { hideFix(); return; }
+  showAbout(false); closePlace(); closePlacesList();
+  $('#layers').hidden = true; $('#layers-btn').setAttribute('aria-expanded', 'false');
+  $('#hint').hidden = true;                 // out of the way for now; it may still show on a later visit
+  $('#fix').hidden = $('#fix-aim').hidden = false;
+  // on a phone, a focused box raises the keyboard before the map has been moved: focus the card instead
+  (matchMedia('(pointer: coarse)').matches ? $('#fix-title') : $('#fix-note')).focus();
+  track('correction_opened');
+}
+$('#fix-open').addEventListener('click', () => showFix(true));
+$('#fix-close').addEventListener('click', () => { showFix(false); $('#about-btn').focus(); });
+$('#fix-cancel').addEventListener('click', () => { showFix(false); $('#about-btn').focus(); });
+$('#fix-note').addEventListener('input', e => { $('#fix-send').disabled = !e.target.value.trim(); });
+$('#fix-form').addEventListener('submit', e => {
+  e.preventDefault();
+  const [x, y] = toPx(map.getCenter());
+  const c = correction({ angle: state.angle, x, y, zoom: map.getZoom() }, $('#fix-note').value);
+  if (!c) return;
+  track('correction_sent', c);
+  $('#fix-note').value = ''; $('#fix-send').disabled = true;
+  showFix(false); $('#about-btn').focus();
+  toast("Thanks, it's on its way.");
+});
+
 addEventListener('keydown', e => {
+  if (e.key === 'Escape' && !$('#fix').hidden) { showFix(false); $('#about-btn').focus(); return; }
   if (e.key === 'Escape' && !$('#about').hidden) { showAbout(false); $('#about-btn').focus(); return; }
   if (e.key === 'Escape' && !$('#place').hidden) { closePlace(); return; }
   if (e.key === 'Escape' && !$('#places-list').hidden) { closePlacesList(); $('#places-btn').focus(); return; }
@@ -456,6 +486,7 @@ async function loadManifest() {
 }
 
 (async function boot() {
+  const wantFix = new URLSearchParams(location.hash.slice(1)).has('fix');   // read before anything rewrites the address
   state.manifest = await loadManifest();
   const any = state.manifest && state.manifest.angles && state.manifest.angles.some(Boolean);
   $('#drawing').hidden = !!any;
@@ -477,6 +508,8 @@ async function loadManifest() {
       map.fitBounds(L.latLngBounds(grid.angles[0].region.map(([x, y]) => toLL(x, y))), { padding: [40, 40], animate: false });
     }
   }
+  // the About page's "tell me what's wrong" link opens the note; the link itself is not kept
+  if (wantFix) { saveHash(); showFix(true); }
   setPaper();
   refreshWeather();
   const st = sunTimes();

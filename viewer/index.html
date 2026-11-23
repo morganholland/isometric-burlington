@@ -92,6 +92,7 @@
   </ul>
   <h3>What you're looking at</h3>
   <p>Every block of Burlington, South Burlington and Winooski was redrawn in a city-builder style by an open-source AI image model, working from Google's 3D map of the city. It's an illustration: small details are invented, and some won't match what's really there. Street and place names are drawn on top from OpenStreetMap, so they stay sharp when you zoom in. <a href="./how.html">How it was made, and what's wrong with it</a>.</p>
+  <p><button id="fix-open" class="fix-open" type="button">Something wrong here? Tell me</button></p>
   <p>The sky follows Burlington's real sunset and the current weather at BTV, and the map turns white when there is snow lying on the ground. Buses move along their routes on GMT's published timetable, not live GPS. Planes are live positions from ADS-B receivers.</p>
   <p>The cars are simulated, not tracked: they drive OpenStreetMap's streets and stop at its traffic lights, and there are more or fewer of them by the hour, the way a typical day goes. At night the street lamps and lit windows are placed to suit each street and building, not surveyed; the runway and breakwater lights follow OpenStreetMap.</p>
   <p>Some things are just for fun: fireworks over the waterfront on the evening of July 3 and at midnight on New Year's Eve, Church Street's holiday lights from late November to New Year's Day, and Champ, who is a legend, not a sighting.</p>
@@ -99,8 +100,20 @@
   <p class="credits">Inspired by <a href="https://iso.sloptoronto.ca" target="_blank" rel="noopener">Isometric Toronto</a> by John Fewell. 3D map imagery © Google, via Cesium ion. Drawn with Qwen-Image. Search, street names, the streets the cars drive and the lights at night © OpenStreetMap contributors (ODbL). Weather from the National Weather Service; snow depth from <a href="https://open-meteo.com" target="_blank" rel="noopener">Open-Meteo</a> (CC BY 4.0). Bus schedule from Green Mountain Transit. Flights from adsb.lol (ODbL).</p>
   <h3>Made by</h3>
   <p>Morgan, in South Burlington, Vermont. More of what I make is on my blog, <a href="https://morgz.org" target="_blank" rel="noopener">morgz.org</a>.</p>
-  <p class="privacy">The site counts visits and clicks without cookies or accounts, and never records what you search for or where you are on the map.</p>
+  <p class="privacy">The site counts visits and clicks without cookies or accounts, and never records what you search for or where you are on the map, except the spot you choose to send with a correction.</p>
   <p id="tip" class="tip" hidden>If the map made you smile, <a id="tip-link" class="tip-btn" href="#" target="_blank" rel="noopener">buy me a coffee on Venmo ☕</a></p>
+</section>
+
+<div id="fix-aim" class="fix-aim" aria-hidden="true" hidden></div>
+<section id="fix" class="card fix-card" role="dialog" aria-modal="false" aria-labelledby="fix-title" hidden>
+  <button id="fix-close" class="about-close" type="button" aria-label="Close">×</button>
+  <h2 id="fix-title" tabindex="-1">What's wrong here?</h2>
+  <form id="fix-form">
+    <p>Move the map so the spot is under the crosshair, then tell me what's off. Your note and that spot are sent to me, with no name or email.</p>
+    <label class="sr" for="fix-note">Your note</label>
+    <textarea id="fix-note" rows="3" maxlength="600" placeholder="The Flynn is drawn as a parking lot…"></textarea>
+    <div class="fix-actions"><button id="fix-cancel" type="button">Cancel</button><button id="fix-send" type="submit" disabled>Send</button></div>
+  </form>
 </section>
 
 <section id="places-list" class="card panel places-list" aria-label="Places worth a look" hidden>

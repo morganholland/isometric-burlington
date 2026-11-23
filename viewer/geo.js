@@ -58,4 +58,6 @@ export function enuToLla(e, n, u = 0) {
   return [lat, lon, h];
 }
 
+// typical ground height (m, ENU up) over the drawn city: turning the map, search pins and corrections use it
+export const GROUND_U = 40;
 export const latLonToPx = (angle, lat, lon, h = 0) => { const [e, n, u] = llaToEnu(lat, lon, h); return enuToPx(angle, e, n, u); };

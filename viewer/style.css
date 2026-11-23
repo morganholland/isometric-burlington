@@ -143,3 +143,24 @@ legend{font:600 11px var(--mono);letter-spacing:.08em;text-transform:uppercase;c
 .stack button svg{width:17px;height:17px;display:block;margin:auto}
 #snap-btn[aria-busy=true]{opacity:.45}
 .toast{position:fixed;left:50%;transform:translateX(-50%);top:calc(70px + var(--safe-t));padding:8px 14px;font:500 13.5px var(--body);z-index:650;white-space:nowrap}
+
+/* corrections: a note card and a crosshair on the middle of the map */
+.fix-open{font:600 13px var(--body);border:1px solid var(--line);background:transparent;color:var(--ink);border-radius:7px;padding:6px 10px;cursor:pointer}
+.fix-open:focus-visible,.fix-actions button:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
+.fix-card{box-sizing:border-box;position:fixed;left:calc(12px + var(--safe-l));bottom:calc(48px + var(--safe-b));width:min(360px,calc(100vw - 88px - var(--safe-l) - var(--safe-r)));padding:14px 16px 12px;z-index:560}
+.fix-card h2{font:700 17px/1.2 var(--display);margin:0 30px 6px 0}
+.fix-card p{margin:0 0 8px;font-size:13.5px}
+.fix-card textarea{box-sizing:border-box;width:100%;font:16px/1.4 var(--body);color:var(--ink);background:transparent;border:1px solid var(--line);border-radius:7px;padding:7px 9px;resize:vertical}
+.fix-card textarea:focus-visible{outline:2px solid var(--accent);outline-offset:1px}
+.fix-actions{display:flex;justify-content:flex-end;gap:6px;margin-top:8px}
+.fix-actions button{font:600 13px var(--body);border:1px solid var(--line);background:transparent;color:var(--ink);border-radius:7px;padding:6px 12px;cursor:pointer}
+#fix-send{background:var(--accent);border-color:var(--accent);color:#fff}
+#fix-send:disabled{opacity:.45;cursor:default}
+.fix-aim{box-sizing:border-box;position:fixed;left:50%;top:50%;width:44px;height:44px;margin:-22px 0 0 -22px;border:2px solid var(--accent);border-radius:50%;box-shadow:0 0 0 2px rgba(255,255,255,.8);z-index:420;pointer-events:none}
+.fix-aim::before,.fix-aim::after{content:"";position:absolute;background:var(--accent)}
+.fix-aim::before{left:50%;top:-10px;bottom:-10px;width:2px;margin-left:-1px}
+.fix-aim::after{top:50%;left:-10px;right:-10px;height:2px;margin-top:-1px}
+.sr{position:absolute;width:1px;height:1px;overflow:hidden;clip:rect(0 0 0 0);white-space:nowrap}
+.fix-card h2:focus{outline:none}
+/* short screens (a phone with its keyboard up): a compact note, clear of the crosshair in the middle */
+@media (max-height:600px){.fix-card{bottom:calc(40px + var(--safe-b));padding:10px 12px}.fix-card p{display:none}.fix-card textarea{height:3.2em}.fix-actions{margin-top:6px}}

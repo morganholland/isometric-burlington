@@ -20,6 +20,17 @@ test('analytics drops the map position from every URL it sends', () => {
   assert.equal(stripHash(null), null, 'a dropped event stays dropped');
 });
 
+test('a correction keeps the link to the spot someone chose to send, and nothing else', () => {
+  const e = stripHash({ event: 'correction_sent', properties: {
+    note: 'wrong', link: 'https://isoburlington.com/#a=1&x=5&y=6&z=0',
+    $current_url: 'https://isoburlington.com/#a=1&x=5&y=6&z=0',
+  } });
+  assert.equal(e.properties.link, 'https://isoburlington.com/#a=1&x=5&y=6&z=0');
+  assert.equal(e.properties.$current_url, 'https://isoburlington.com/');
+  const other = stripHash({ event: 'view_shared', properties: { link: 'https://isoburlington.com/#a=1&x=5&y=6&z=0' } });
+  assert.equal(other.properties.link, 'https://isoburlington.com/', 'only a correction carries a position');
+});
+
 test('analytics only switches on for the live domain', () => {
   assert.equal(initTracking('localhost'), false);
   assert.equal(initTracking('isometric-burlington-git-x.vercel.app'), false);
