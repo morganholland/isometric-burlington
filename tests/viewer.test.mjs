@@ -120,7 +120,7 @@ test('the Amtrak train parks at Union Station overnight and says so', async () =
   await page.waitForFunction(() => window.__iso.buses.data);
   // 11 pm on a Tuesday, looking at the waterfront by the station
   await page.evaluate(() => {
-    window.__iso.buses.offsetMs = Date.parse('2026-11-11T04:00:00Z') - Date.now();
+    window.__iso.buses.offsetMs = Date.parse('2026-11-25T04:00:00Z') - Date.now();   // inside the feed's dates
     window.__iso.goTo(44.4757, -73.2195, 'Union Station');
   });
   await page.waitForTimeout(1600);

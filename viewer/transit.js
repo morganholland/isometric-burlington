@@ -180,7 +180,7 @@ export class BusLayer {
       const front = i === 0 && (!b.train || b.k === 0);   // the face between corners 0 and 1 is the nose
       ctx.fillStyle = front ? shade('#202833', 1) : shade(color, b.train ? 0.8 : 0.72);
       ctx.beginPath(); ctx.moveTo(bot[i].x, bot[i].y); ctx.lineTo(bot[j].x, bot[j].y); ctx.lineTo(top[j].x, top[j].y); ctx.lineTo(top[i].x, top[i].y); ctx.closePath(); ctx.fill();
-      if (!front && Math.hypot(bot[j].x - bot[i].x, bot[j].y - bot[i].y) > 10) {
+      if (i % 2 === 1 && Math.hypot(bot[j].x - bot[i].x, bot[j].y - bot[i].y) > 10) {   // windows down the long sides
         // a band of windows, lit at night
         const m = (p, q, k) => ({ x: p.x + (q.x - p.x) * k, y: p.y + (q.y - p.y) * k });
         const a0 = m(bot[i], top[i], 0.55), a1 = m(bot[j], top[j], 0.55), b0 = m(bot[i], top[i], 0.85), b1 = m(bot[j], top[j], 0.85);
@@ -193,7 +193,7 @@ export class BusLayer {
     ctx.strokeStyle = 'rgba(255,255,255,0.35)'; ctx.lineWidth = 0.75; ctx.stroke();
     const nose = { x: (bot[0].x + bot[1].x) / 2, y: (bot[0].y + bot[1].y) / 2 };
     const tail = (bot[2].y + bot[3].y) / 2;
-    if (this.night > 0.3 && nose.y > tail && (!b.train || b.k === 0)) {             // headlights only when the nose faces the viewer
+    if (this.night > 0.3 && nose.y > tail && (!b.train || (b.k === 0 && b.trip[5] !== 'parked'))) {   // a parked train is dark             // headlights only when the nose faces the viewer
       const g = ctx.createRadialGradient(nose.x, nose.y, 0, nose.x, nose.y, 10 * Math.min(grow, 2));
       g.addColorStop(0, `rgba(255,236,170,${0.7 * this.night})`); g.addColorStop(1, 'rgba(255,236,170,0)');
       ctx.fillStyle = g; ctx.fillRect(nose.x - 24, nose.y - 24, 48, 48);

@@ -4,15 +4,22 @@ viewer can run the train on its timetable beside the buses.
 usage: python3 pipeline/amtrak.py <unzipped Amtrak GTFS dir> [out.json]
 (the feed is https://content.amtrak.com/content/gtfs/GTFS.zip)
 
+Amtrak's track shape is coarse (one straight 2 km chord past Red Rocks), so on and near the map it is redrawn
+from the federal rail network (data/rail_amtrak.geojson, the tracks Amtrak runs on here, from US DOT BTS
+"North American Rail Network Lines"): sampled every 10 m and snapped onto the real rails.
+
 Amtrak's feed has no shape_dist_traveled, so distances along the track are measured here and each
 station is placed at the nearest point of the track. Heights come from the map's own street heights
-(viewer/labels.json) at the nearest street point, not from a terrain model, so the train sits on the
-drawn ground. The train lays over at Burlington's Union Station between its evening arrival and its
+(viewer/labels.json) where a street is within 40 m of the track, interpolated along the track in between,
+so the train sits on the drawn ground. The train lays over at Burlington's Union Station between its evening arrival and its
 morning departure: that wait is written as a third "trip" that stands still at the end of the track.
 """
 import csv, json, math, sys
 from collections import defaultdict
 from pathlib import Path
+
+sys.path.insert(0, str(Path(__file__).parent))
+from transit import simplify  # noqa: E402
 
 ROUTE_NAME = "Ethan Allen Express"
 ROUTE_ID = "amtrak"
@@ -64,11 +71,80 @@ def project(pts, q):
     return best
 
 
+NEAR_STREET_M = 40
+SNAP_M = 80
+
+
 def street_heights(labels):
+    """(lat, lon) -> height of the nearest street point, or None when no street is within NEAR_STREET_M"""
     pts = [(p[0], p[1], p[2]) for s in labels["streets"] for p in s[2]]
     def h(lat, lon):
-        return min(pts, key=lambda p: (p[0] - lat) ** 2 + ((p[1] - lon) * 0.713) ** 2)[2]
+        p = min(pts, key=lambda p: (p[0] - lat) ** 2 + ((p[1] - lon) * 0.713) ** 2)
+        return p[2] if metres(p, (lat, lon)) <= NEAR_STREET_M else None
     return h
+
+
+def fill(vals):
+    """None gaps filled by straight lines between the known values (and held flat past the ends)"""
+    known = [i for i, v in enumerate(vals) if v is not None]
+    if not known:
+        return [0.0] * len(vals)
+    out = list(vals)
+    for i in range(len(vals)):
+        if out[i] is not None:
+            continue
+        lo = max((k for k in known if k < i), default=None)
+        hi = min((k for k in known if k > i), default=None)
+        if lo is None or hi is None:
+            out[i] = vals[hi if lo is None else lo]
+        else:
+            out[i] = vals[lo] + (vals[hi] - vals[lo]) * (i - lo) / (hi - lo)
+    return out
+
+
+def rail_snapper(path):
+    segs = []
+    for f in json.loads(Path(path).read_text())["features"]:
+        c = f["geometry"]["coordinates"]
+        segs += [((a[1], a[0]), (b[1], b[0])) for a, b in zip(c, c[1:])]
+    def snap(lat, lon):
+        best, bd = (lat, lon), SNAP_M
+        k = math.cos(math.radians(lat))
+        qx, qy = lon * 111320 * k, lat * 110950
+        for a, b in segs:
+            ax, ay, bx, by = a[1] * 111320 * k, a[0] * 110950, b[1] * 111320 * k, b[0] * 110950
+            dx, dy = bx - ax, by - ay
+            t = max(0.0, min(1.0, ((qx - ax) * dx + (qy - ay) * dy) / (dx * dx + dy * dy or 1e-9)))
+            dd = math.hypot(qx - ax - t * dx, qy - ay - t * dy)
+            if dd < bd:
+                bd, best = dd, (a[0] + (b[0] - a[0]) * t, a[1] + (b[1] - a[1]) * t)
+        return best
+    return snap
+
+
+def densify(pts, step):
+    out = [pts[0]]
+    for a, b in zip(pts, pts[1:]):
+        n = max(1, int(metres(a, b) // step))
+        out += [(a[0] + (b[0] - a[0]) * i / n, a[1] + (b[1] - a[1]) * i / n) for i in range(1, n + 1)]
+    return out
+
+
+def redraw_near_map(pts, snap):
+    """the shape's stretch on and next to the map, sampled every 10 m and snapped onto the real rails"""
+    near = [inside(*p) for p in pts]
+    idx = [k for k in range(len(pts)) if near[k] or (k > 0 and near[k - 1]) or (k + 1 < len(pts) and near[k + 1])]
+    if not idx:
+        return pts
+    i0, i1 = idx[0], idx[-1]
+    mid = [snap(*p) for p in densify(pts[i0:i1 + 1], 10)]
+    # the snapped line wobbles where two tracks run side by side: drop points that step backwards
+    clean = [mid[0]]
+    for p in mid[1:]:
+        if metres(clean[-1], p) > 2:
+            clean.append(p)
+    clean = [(p[0], p[1]) for p in simplify([(p[0], p[1], 0) for p in clean], 1.0)]   # straight runs need few points
+    return pts[:i0] + clean + pts[i1 + 1:]
 
 
 def build(d, labels):
@@ -88,6 +164,7 @@ def build(d, labels):
         if r["shape_id"] in want_shapes:
             shp[r["shape_id"]].append((int(r["shape_pt_sequence"]), float(r["shape_pt_lat"]), float(r["shape_pt_lon"])))
     height = street_heights(labels)
+    snap = rail_snapper(Path(__file__).parent.parent / "data/rail_amtrak.geojson")
 
     services, shapes, out_trips, sidx = [], [], [], {}
     arrive, leave = None, None                       # (shape index, metres, time) at Burlington
@@ -96,14 +173,15 @@ def build(d, labels):
         if t["service_id"] not in sidx:
             sidx[t["service_id"]] = len(services)
             services.append(sum(1 << i for i, k in enumerate(days) if c[k] == "1"))
-        full = along([(la, lo) for _, la, lo in sorted(shp[t["shape_id"]])])
+        full = along(redraw_near_map([(la, lo) for _, la, lo in sorted(shp[t["shape_id"]])], snap))
         s = sorted(st[t["trip_id"]])
         dist = [project(full, stops[x[3]]) for x in s]
         # keep the track on and next to the map, with distances still measured from the start of the line
         near = [inside(p[0], p[1]) for p in full]
         keep = [p for k, p in enumerate(full) if near[k] or (k > 0 and near[k - 1]) or (k + 1 < len(full) and near[k + 1])]
         si = len(shapes)
-        shapes.append([[round(p[0], 5), round(p[1], 5), round(height(p[0], p[1]), 1), round(p[2], 1)] for p in keep])
+        hs = fill([height(p[0], p[1]) for p in keep])
+        shapes.append([[round(p[0], 6), round(p[1], 6), round(h, 1), round(p[2], 1)] for p, h in zip(keep, hs)])
         tl = []
         for (_, arr, dep, _), m in zip(s, dist):
             tl += [arr, round(m, 1)]
@@ -111,12 +189,13 @@ def build(d, labels):
                 tl += [dep, round(m, 1)]
         out_trips.append([ROUTE_ID, sidx[t["service_id"]], si, tl, t["trip_short_name"], t["trip_headsign"]])
         if s[-1][3] == "BTN":
-            arrive = (si, round(dist[-1], 1), s[-1][1], sidx[t["service_id"]])
+            arrive = (s[-1][1], sidx[t["service_id"]])
         if s[0][3] == "BTN":
-            leave = s[0][2]
-    if arrive and leave is not None:
-        si, m, t0, svc = arrive
-        t1 = leave + DAY if leave < t0 else leave
+            leave = (si, round(dist[0], 1), s[0][2])
+    # overnight the train stands where the morning train starts, facing south, so it leaves without a jump
+    if arrive and leave:
+        (t0, svc), (si, m, dep) = arrive, leave
+        t1 = dep + DAY if dep < t0 else dep
         out_trips.append([ROUTE_ID, svc, si, [t0, m, t1, m], "", "parked"])
     return {"routes": {ROUTE_ID: [route["route_short_name"] or "Amtrak", "#" + (route["route_color"] or "cae4f1").lower(),
                                   ROUTE_NAME, "train"]},

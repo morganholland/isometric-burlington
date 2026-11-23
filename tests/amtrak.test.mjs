@@ -18,7 +18,7 @@ test('joining two timetables keeps every trip on its own shape and service', () 
     routes: fc.constant({ [`r${t.shapes.length}${t.services.length}`]: ['1', '#000', 'x'] }),
     shapes: fc.constant(t.shapes), services: fc.constant(t.services),
     trips: fc.array(fc.tuple(fc.nat(t.services.length - 1), fc.nat(t.shapes.length - 1)).map(([v, s]) => ['r', v, s, [0, 0, 60, 1000]]), { maxLength: 5 }),
-    dates: fc.dictionary(fc.constantFrom('20261124', '20261225'), fc.record({ off: fc.array(fc.nat(t.services.length - 1)), on: fc.constant([]) })),
+    dates: fc.dictionary(fc.constantFrom('20261124', '20261225'), fc.record({ off: fc.array(fc.nat(t.services.length - 1)), on: fc.array(fc.nat(t.services.length - 1)) })),
   }));
   fc.assert(fc.property(tt, tt, (a, b) => {
     const m = mergeTransit(a, b);
@@ -28,16 +28,18 @@ test('joining two timetables keeps every trip on its own shape and service', () 
       assert.deepEqual(m.shapes[u[2]], b.shapes[t[2]]);
       assert.equal(m.services[u[1]], b.services[t[1]]);
     });
-    for (const [ymd, ex] of Object.entries(b.dates)) for (const v of ex.off) assert.ok(m.dates[ymd].off.includes(v + a.services.length));
-    for (const [ymd, ex] of Object.entries(a.dates)) assert.deepEqual(m.dates[ymd].off.slice(0, ex.off.length), ex.off);
+    for (const [ymd, ex] of Object.entries(b.dates)) for (const k of ['off', 'on']) for (const v of ex[k]) assert.ok(m.dates[ymd][k].includes(v + a.services.length));
+    for (const [ymd, ex] of Object.entries(a.dates)) for (const k of ['off', 'on']) assert.deepEqual(m.dates[ymd][k].slice(0, ex[k].length), ex[k]);
   }));
 });
 
 test('the evening train comes up the lake shore and reaches Union Station on time', () => {
   const d = both();
-  // 9:20 pm: train 291 is on the map, south of downtown, heading north
+  // 9:20 pm: train 291 is on the map, south of downtown, heading north, still moving a minute before it is due
   const t = trains(d, '20261124', 1, hm(21, 20));
   assert.equal(t.length, 1);
+  const [a] = trains(d, '20261124', 1, hm(21, 25)), [b] = trains(d, '20261124', 1, hm(21, 25) + 30);
+  assert.equal(a.trip[4], '291'); assert.ok(b.dist - a.dist > 100, 'still moving at 9:25 pm');
   assert.equal(t[0].trip[4], '291');
   assert.ok(t[0].dir[1] > 0.5, 'heading north');
   // 9:26 pm it is in, and stays parked at the station overnight
@@ -64,14 +66,36 @@ test('a train is a locomotive and five coaches in a line along the track, all on
         assert.ok(Math.abs(gap - want) < 3, `car ${k} ${gap.toFixed(1)} m behind, want ${want}`);
       }
       for (const c of cars) assert.ok(c.u > -20 && c.u < 60, `height ${c.u}`);
+      // one train, one level: no car steps up or down against its neighbour
+      for (let k = 1; k < cars.length; k++) assert.ok(Math.abs(cars[k].u - cars[k - 1].u) < 2, `car ${k} height step`);
     }
   }
 });
 
-test('the train stops at the end of the track, by the station', () => {
+test('overnight the train stands at the end of the track facing south, and leaves without a jump', () => {
   const d = both();
   const [p] = trains(d, '20261124', 1, hm(23, 0));
-  const sh = d.shapes[p.si], end = sh[sh.length - 1];
-  const head = trainCars(sh, p.dist)[0];
-  assert.ok(Math.hypot(head.e - end[4], head.n - end[5]) < 40, 'locomotive at the buffer');
+  const sh = d.shapes[p.si], buffer = sh[0];
+  const cars = trainCars(sh, p.dist);
+  const last = cars[cars.length - 1];
+  assert.ok(Math.hypot(last.e - buffer[4], last.n - buffer[5]) < 40, 'last coach at the buffer');
+  assert.ok(cars[0].dir[1] < -0.5, 'locomotive facing south, the way it leaves');
+  const at = s => { const [b] = trains(d, '20261125', 2, s); return trainCars(d.shapes[b.si], b.dist)[0]; };
+  const before = at(hm(9, 25) - 1), after = at(hm(9, 25) + 1);
+  assert.ok(Math.hypot(after.e - before.e, after.n - before.n) < 5, 'no jump at 9:25 am');
+});
+
+test('the train runs on the real rails: every track point near the map is within a few metres of the rail line', () => {
+  const rails = json('data/rail_amtrak.geojson').features.flatMap(f => f.geometry.coordinates.slice(1).map((b, i) => [f.geometry.coordinates[i], b]));
+  const m = (lat, lon, [a, b]) => {
+    const k = Math.cos(lat * Math.PI / 180), X = x => x * 111320 * k, Y = y => y * 110950;
+    const ax = X(a[0]), ay = Y(a[1]), bx = X(b[0]), by = Y(b[1]), qx = X(lon), qy = Y(lat), dx = bx - ax, dy = by - ay;
+    const t = Math.max(0, Math.min(1, ((qx - ax) * dx + (qy - ay) * dy) / (dx * dx + dy * dy || 1e-9)));
+    return Math.hypot(qx - ax - t * dx, qy - ay - t * dy);
+  };
+  for (const sh of json('viewer/amtrak.json').shapes) for (const [lat, lon] of sh) {
+    if (lat < 44.39 || lat > 44.55) continue;
+    const near = Math.min(...rails.map(r => m(lat, lon, r)));
+    assert.ok(near < 3, `${lat},${lon} is ${near.toFixed(1)} m off the rails`);
+  }
 });
