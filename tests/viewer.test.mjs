@@ -283,6 +283,40 @@ test('places worth a look: pins and the ★ list open a note, and turn with the 
   await ctx.close();
 });
 
+test('About page: drag to compare, and a change-log link opens its spot', async () => {
+  const { ctx, page, errors } = await open({ viewport: { width: 1200, height: 860 } });
+  await page.goto(URL0 + 'how.html');
+  const frame = page.locator('.compare .frame');
+  await frame.scrollIntoViewIfNeeded();
+  await page.waitForFunction(() => [...document.querySelectorAll('.compare img')].every(i => i.complete && i.naturalWidth === 1600));
+  const cut = () => frame.evaluate(f => parseFloat(f.style.getPropertyValue('--cut')));
+  assert.equal(await cut(), 50, 'starts half and half');
+  // the "before" picture is cut where the slider is: drag from the middle towards the left
+  const box = await frame.boundingBox();
+  await page.mouse.move(box.x + box.width / 2, box.y + box.height / 2);
+  await page.mouse.down();
+  await page.mouse.move(box.x + box.width * 0.2, box.y + box.height / 2, { steps: 6 });
+  await page.mouse.up();
+  const dragged = await cut();
+  assert.ok(dragged > 12 && dragged < 28, `dragged to about a fifth (${dragged})`);
+  const clip = await page.locator('.compare .before').evaluate(i => getComputedStyle(i).clipPath);
+  assert.match(clip, /inset/, 'the before picture is clipped');
+  // and from the keyboard
+  await page.focus('.compare input');
+  await page.keyboard.press('ArrowRight');
+  assert.equal(await cut(), dragged + 1);
+  if (SHOTS) await page.screenshot({ path: `${SHOTS}/how-compare.png` });
+  // the numbers row and change log fit a phone
+  await page.setViewportSize({ width: 390, height: 844 });
+  assert.equal(await page.evaluate(() => document.documentElement.scrollWidth > innerWidth), false, 'fits a phone');
+  // "Look for Champ" opens the map with Champ asked for
+  await page.click('.log a[href="./#m=champ"]');
+  await page.waitForFunction(() => window.__iso && window.__iso.state.moment === 'champ');
+  assert.equal(await page.evaluate(() => window.__iso.moments.on), true);
+  assert.deepEqual(errors, []);
+  await ctx.close();
+});
+
 test('the How it was made page loads, links back, and is linked from the map', async () => {
   const { ctx, page, errors } = await open({ viewport: { width: 1400, height: 880 } });
   assert.equal(await page.locator('.status .credit a[href="./how.html"]').count(), 1);
