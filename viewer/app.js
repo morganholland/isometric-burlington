@@ -1,6 +1,6 @@
 import L from 'leaflet';
 import grid from './grid-lite.json';
-import { latLonToPx, pxToEnu, enuToPx, enuToLla, GRID, GROUND_U } from './geo.js';
+import { latLonToPx, llaToEnu, pxToEnu, enuToPx, enuToLla, GRID, GROUND_U } from './geo.js';
 import { nightFactor, fetchWeather, sunTimes } from './sky.js';
 import { WeatherFX } from './fx.js';
 import { BusLayer } from './transit.js';
@@ -10,7 +10,7 @@ import { CarLayer } from './traffic.js';
 import { LightLayer, litShare } from './lights.js';
 import { burlingtonClock } from './transit.js';
 import { correction } from './fix.js';
-import { groundU, rayPoints, describeBuilding } from './buildings.js';
+import { groundU, indexBuildings, hitBuilding, lookupPoint, describeBuilding } from './buildings.js';
 import { encodeList, decodeList, LINK_MAX } from './lists.js';
 import { viewHash, readViewHash, readList, listAngle, readMoment, shareLink, snapshot, deliver } from './share.js';
 import { MomentLayer, groundSnow, fetchSnowDepth, FW_SITE, CHAMP_SPOTS } from './moments.js';
@@ -459,52 +459,78 @@ map.on('click', busTip);
 
 // ---------- tap a building: its public record (address, use, year built in Burlington; never owners or values) ----------
 let streetPts = [];
-const bldg = { seq: 0, outline: null, h: 0, layer: null };
+const bldg = { seq: 0, outline: null, h: 0, layer: null, index: null, loading: null, vlistHidden: false, timer: 0 };
 function closeBuilding() {
-  bldg.seq++; bldg.outline = null;
+  bldg.seq++; bldg.outline = null; $('#map').classList.remove('looking');
   if (bldg.layer) { map.removeLayer(bldg.layer); bldg.layer = null; }
   $('#bldg').hidden = true;
+  if (bldg.vlistHidden) { bldg.vlistHidden = false; if (vlist.list && $('#mklist').hidden) $('#vlist').hidden = false; }
 }
 function drawBuildingOutline() {
   if (bldg.layer) { map.removeLayer(bldg.layer); bldg.layer = null; }
   if (!bldg.outline) return;
-  bldg.layer = L.polygon(bldg.outline.map(([lat, lon]) => toLL(...latLonToPx(state.angle, lat, lon, bldg.h))), { className: 'bldg-outline', interactive: false }).addTo(map);
+  bldg.layer = L.polygon(bldg.outline.map(([e, n]) => toLL(...enuToPx(state.angle, e, n, bldg.h))), { className: 'bldg-outline', interactive: false }).addTo(map);
+}
+// footprints and heights, fetched the first time someone taps (about 400 KB)
+function buildingIndex() {
+  bldg.loading ||= fetch('buildings.json').then(r => r.ok ? r.json() : null).then(d => (bldg.index = d ? indexBuildings(d) : null)).catch(() => null);
+  return bldg.loading;
 }
 async function openBuilding(cx, cy) {
   const [x, y] = toPx(map.containerPointToLatLng([cx, cy]));
   if (!inRegion(state.angle, x, y)) return;
-  const pts = rayPoints(state.angle, x, y, groundU(state.angle, x, y, streetPts));
-  const seq = ++bldg.seq;
-  hideFix(); closePlace(); closePlacesList();
-  $('#bldg-title').textContent = 'Looking it up…';
-  for (const c of ['town', 'line', 'use', 'src']) $(`#bldg .bldg-${c}`).textContent = '';
-  $('#bldg').hidden = false;
-  let r = null;
+  const seq = ++bldg.seq, angle = state.angle;
+  $('#map').classList.add('looking');
+  try { await lookUp(seq, angle, x, y); } finally { if (seq === bldg.seq) $('#map').classList.remove('looking'); }
+}
+async function lookUp(seq, angle, x, y) {
+  const index = await buildingIndex();
+  if (seq !== bldg.seq) return;
+  const hit = hitBuilding(index, angle, x, y, groundU(angle, x, y, streetPts));
+  const [lat, lon] = lookupPoint(hit.e, hit.n);
+  let r = null, down = false;
   try {
-    const q = pts.map(([lat, lon]) => `${lat},${lon}`).join(';');
-    const res = await fetch(`/api/building?pts=${encodeURIComponent(q)}`);
-    r = res.ok ? await res.json() : null;
-  } catch { r = null; }
+    const res = await fetch(`/api/building?pts=${lat},${lon}`);
+    r = await res.json();
+    down = !res.ok || !!r.error;
+  } catch { down = true; }
   if (seq !== bldg.seq) return;                  // another tap, or closed, while this one was out
   const card = describeBuilding(r);
-  track('building_tapped', { found: !!card, town: card ? card.town : null, built: !!(card && r.built) });
-  if (!card) { closeBuilding(); toast('No public record for that spot'); return; }
+  track('building_tapped', { found: !!card, town: card ? card.town : null, built: !!(card && r.built), building: !!hit.building });
+  if (!card) {
+    closeBuilding();
+    toast(down ? 'Couldn’t reach the public records just now. Try again in a minute.' : hit.building ? 'No public record for that building' : 'No building there');
+    return;
+  }
+  hideFix(); closePlace(); closePlacesList();
+  if (!$('#vlist').hidden && matchMedia('(max-width: 640px)').matches) { $('#vlist').hidden = true; bldg.vlistHidden = true; }   // both sit at the bottom on a phone
   $('#bldg-title').textContent = card.title;
   $('#bldg .bldg-town').textContent = card.town;
   $('#bldg .bldg-line').textContent = card.line || '';
   $('#bldg .bldg-use').textContent = card.use || '';
   $('#bldg .bldg-src').textContent = `From ${card.source}. Owners and values are left out on purpose.`;
-  bldg.outline = r.outline || null; bldg.h = pts[1][2];   // outlines sit on the ground
+  $('#bldg').hidden = false;
+  // outline the building's roof where one was hit, else the lot on the ground
+  if (hit.building) { bldg.outline = hit.building.ring; bldg.h = hit.building.top; }
+  else { bldg.outline = r.outline ? r.outline.map(([la, lo]) => llaToEnu(la, lo, 0).slice(0, 2)) : null; bldg.h = hit.u; }
   drawBuildingOutline();
+  $('#bldg-close').focus({ preventScroll: true });
 }
 $('#bldg-close').addEventListener('click', () => { closeBuilding(); $('#map').focus(); });
 map.on('click', e => {
   const { x, y } = e.containerPoint;
+  clearTimeout(bldg.timer);
+  // a tap that closes something only closes it
+  if (!$('#place').hidden || !$('#layers').hidden || !$('#places-list').hidden) {
+    closePlace(); closePlacesList(); $('#layers').hidden = true; $('#layers-btn').setAttribute('aria-expanded', 'false');
+    return;
+  }
   // only close enough in to tell buildings apart, and not when the tap meant something else
   if (map.getZoom() < -1.5 || !$('#mklist').hidden || !$('#fix').hidden) return;
   if ((planes.on && planes.hit(x, y)) || (moments.on && moments.hit(x, y)) || (buses.on && buses.data && buses.hit(x, y))) return;
-  openBuilding(x, y);
+  bldg.timer = setTimeout(() => openBuilding(x, y), 300);   // wait: a second tap means zoom in, not this
 });
+map.on('dblclick zoomstart movestart', () => clearTimeout(bldg.timer));
 map.on('mouseout', () => { tipAt = null; $('#bus-tip').hidden = true; });
 map.on('movestart zoomstart', () => { tipAt = null; $('#bus-tip').hidden = true; });
 $('#show-labels').addEventListener('change', e => { labels.on = e.target.checked; labels.draw(); });

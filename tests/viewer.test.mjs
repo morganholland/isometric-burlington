@@ -4,7 +4,8 @@ import assert from 'node:assert/strict';
 import { chromium, devices } from 'playwright';
 import { spawn } from 'node:child_process';
 import fs from 'node:fs';
-import { latLonToPx, GROUND_U } from '../viewer/geo.js';
+import { latLonToPx, llaToEnu, enuToPx, GROUND_U } from '../viewer/geo.js';
+import { indexBuildings, insideRing } from '../viewer/buildings.js';
 import { encodeList } from '../viewer/lists.js';
 
 const PORT = 4817, URL0 = `http://127.0.0.1:${PORT}/`;
@@ -115,49 +116,97 @@ test('phone: nothing overflows and controls are reachable', async () => {
   await ctx.close();
 });
 
-test('tap a building: its public record, outlined, with no owners or values', async () => {
+// the Hilton's roof (60 Battery St), from the same footprints the map uses: [map x, map y at angle 0, its outline]
+function hiltonRoof() {
+  const index = indexBuildings(JSON.parse(fs.readFileSync('viewer/buildings.json', 'utf8')));
+  const [e, n] = llaToEnu(44.477999, -73.218176, 0);
+  const c = b => b.ring.reduce((s, p) => [s[0] + p[0] / b.ring.length, s[1] + p[1] / b.ring.length], [0, 0]);
+  const b = index.list.reduce((m, b) => { const [x, y] = c(b), [mx, my] = c(m); return (x - e) ** 2 + (y - n) ** 2 < (mx - e) ** 2 + (my - n) ** 2 ? b : m; });
+  return { px: enuToPx(0, ...c(b), b.top), ring: b.ring };
+}
+const onScreen = (page, [x, y]) => page.evaluate(([x, y]) => { const p = window.__iso.map.latLngToContainerPoint([-y, x]); return [Math.round(p.x), Math.round(p.y)]; }, [x, y]);
+
+test('tap a building: the one you see, its public record, outlined, with no owners or values', async () => {
   const { ctx, page, errors } = await open({ viewport: { width: 1280, height: 820 } });
   const asked = [];
+  let answer = { found: true, address: '60 Battery St', town: 'Burlington', built: 1975, kind: 'Hotel', use: 'Commercial', source: 'City of Burlington assessor', outline: null };
   await page.route('**/api/building**', r => {
     asked.push(new URL(r.request().url()).searchParams.get('pts'));
-    r.fulfill({ json: { found: true, at: 0, address: '81 Church St', town: 'Burlington', built: 1899, kind: 'Office building', use: 'Commercial',
-      source: 'City of Burlington assessor', outline: [[44.4777, -73.2127], [44.4777, -73.2131], [44.4780, -73.2131], [44.4780, -73.2127], [44.4777, -73.2127]] } });
+    r.fulfill(typeof answer === 'number' ? { status: answer, json: { found: false, error: 'lookup failed' } } : { json: answer });
   });
-  await page.evaluate(() => window.__iso.goTo(44.4780, -73.2128, 'Church Street'));
-  await page.waitForTimeout(1500);
+  const roof = hiltonRoof();
+  await page.evaluate(([x, y]) => window.__iso.map.setView([-y, x], -1, { animate: false }), roof.px);
+  await page.waitForTimeout(800);
   // zoomed right out, a tap is just a tap
   await page.evaluate(() => window.__iso.map.setZoom(-3, { animate: false }));
-  await page.mouse.click(700, 420);
-  await page.waitForTimeout(300);
+  await page.mouse.click(...await onScreen(page, roof.px));
+  await page.waitForTimeout(700);
   assert.ok(await page.isHidden('#bldg')); assert.equal(asked.length, 0);
+  await page.evaluate(() => window.__iso.map.setZoom(-1, { animate: false }));
+  await page.waitForTimeout(300);
+  // a double-click zooms in, and is not a tap on a building
+  await page.mouse.dblclick(...await onScreen(page, roof.px));
+  await page.waitForTimeout(900);
+  assert.equal(asked.length, 0, 'no lookup on a double-click'); assert.ok(await page.isHidden('#bldg'));
   await page.evaluate(() => window.__iso.map.setZoom(0, { animate: false }));
   await page.waitForTimeout(300);
-  await page.mouse.click(700, 420);
+  // a tap on the roof asks about a point inside that building, not the lot behind it
+  await page.mouse.click(...await onScreen(page, roof.px));
   await page.waitForSelector('#bldg:not([hidden])');
-  await page.waitForFunction(() => document.querySelector('#bldg-title').textContent === '81 Church St');
-  assert.equal(await page.textContent('#bldg .bldg-line'), 'Office building, built 1899');
+  await page.waitForFunction(() => document.querySelector('#bldg-title').textContent === '60 Battery St');
+  assert.equal(await page.textContent('#bldg .bldg-line'), 'Hotel, built 1975');
   assert.match(await page.textContent('#bldg .bldg-src'), /Owners and values are left out/);
   assert.equal(asked.length, 1);
-  const pts = asked[0].split(';').map(p => p.split(',').map(Number));
-  assert.equal(pts.length, 5, 'points along the line of sight');
-  for (const [lat, lon] of pts) assert.ok(Math.abs(lat - 44.478) < 0.01 && Math.abs(lon + 73.2128) < 0.01, `${lat},${lon} near the tap`);
-  assert.equal(await page.locator('path.bldg-outline').count(), 1, 'the lot is outlined');
+  const [lat, lon] = asked[0].split(',').map(Number);
+  assert.match(asked[0], /^44\.\d{1,5},-73\.\d{1,5}$/, 'one point, to about a metre');
+  const [e, n] = llaToEnu(lat, lon, 0);
+  assert.ok(insideRing(roof.ring, e, n), `${asked[0]} is inside the Hilton`);
+  assert.equal(await page.locator('path.bldg-outline').count(), 1, 'the building is outlined');
+  assert.equal(await page.evaluate(() => document.activeElement.id), 'bldg-close', 'focus moves to the card');
   // the outline turns with the map
   const before = await page.locator('path.bldg-outline').getAttribute('d');
   await page.evaluate(() => window.__iso.rotate(1));
   await page.waitForTimeout(300);
   assert.notEqual(await page.locator('path.bldg-outline').getAttribute('d'), before);
   const ev = await page.evaluate(() => window.__isoEvents.filter(e => e.event === 'building_tapped').map(e => e.props));
-  assert.deepEqual(ev, [{ found: true, town: 'Burlington', built: true }], 'never the address');
+  assert.deepEqual(ev, [{ found: true, town: 'Burlington', built: true, building: true }], 'never the address');
   await page.keyboard.press('Escape');
   assert.ok(await page.isHidden('#bldg'));
   assert.equal(await page.locator('path.bldg-outline').count(), 0);
-  // nothing on record: a short note, no card
-  await page.unroute('**/api/building**');
-  await page.route('**/api/building**', r => r.fulfill({ json: { found: false } }));
+  // with the layers panel open, a tap on the map only closes it
+  await page.click('#layers-btn');
+  assert.ok(await page.isVisible('#layers'));
   await page.mouse.click(640, 400);
-  await page.waitForFunction(() => /No public record/.test(document.querySelector('#toast').textContent));
+  await page.waitForTimeout(700);
+  assert.ok(await page.isHidden('#layers')); assert.ok(await page.isHidden('#bldg')); assert.equal(asked.length, 1);
+  // the records being down is said plainly, not as "nothing there"
+  answer = 503;
+  await page.mouse.click(640, 400);
+  await page.waitForFunction(() => /Couldn.t reach the public records/.test(document.querySelector('#toast').textContent));
   assert.ok(await page.isHidden('#bldg'));
+  // nothing on record: a short note, no card
+  answer = { found: false };
+  await page.mouse.click(600, 380);
+  await page.waitForFunction(() => /No (public record|building there)/.test(document.querySelector('#toast').textContent));
+  assert.ok(await page.isHidden('#bldg'));
+  assert.deepEqual(errors.filter(e => !/503/.test(e)), []);
+  await ctx.close();
+});
+
+test('phone: a building card hides a list being viewed, and gives it back when closed', async () => {
+  const items = [{ name: 'Church Street', note: 'Start here.', lat: 44.4780, lon: -73.2128 }];
+  const code = encodeList({ title: 'Stay', items });
+  const { ctx, page, errors } = await open({ ...devices['iPhone 13'], hash: `#l=${code}` });
+  await page.route('**/api/building**', r => r.fulfill({ json: { found: true, address: '60 Battery St', town: 'Burlington', built: null, kind: 'Hotel', use: null, source: 's', outline: null } }));
+  await page.waitForSelector('#vlist:not([hidden])');
+  const roof = hiltonRoof();
+  await page.evaluate(([x, y]) => window.__iso.map.setView([-y, x], 0, { animate: false }), roof.px);
+  await page.waitForTimeout(800);
+  await page.mouse.click(...await onScreen(page, roof.px));
+  await page.waitForSelector('#bldg:not([hidden])');
+  assert.ok(await page.isHidden('#vlist'), 'the list steps aside');
+  await page.click('#bldg-close');
+  assert.ok(await page.isVisible('#vlist'), 'and comes back');
   assert.deepEqual(errors, []);
   await ctx.close();
 });

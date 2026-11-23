@@ -10,7 +10,7 @@
 - Slice 3 (corrections): live since 2026-11-23 (PR #6); notes collect in the PostHog insight "Map corrections from visitors".
 - Slice 4 (visitor lists): live since 2026-11-23 (PR #7).
 - Slice 5 (the train): live since 2026-11-23 (PR #8).
-- Slice 6 (tap a building): built and tested, in its own PR.
+- Slice 6 (tap a building): built and tested in PR #9; reworked after review so taps find the building seen, not the lot behind it.
 - Slice 7 (live buses) waits on a free Swiftly key only Morgan can request: see `OWED.md`.
 - Rules: spend nothing, free feeds only, never cap zoom, say plainly on the site what is simulated or timetabled.
 
@@ -67,12 +67,21 @@ Each slice is its own small pull request, merged when its tests are green and it
     Burlington assessor data; OpenStreetMap elsewhere). Never owners' names or values.
     - 12a. `api/building.js` asks VCGI's statewide parcels for the lot (address, town, category, outline) and, in
       Burlington, the city's assessor layer for year built and building type. Only whitelisted fields are
-      requested or returned (property-tested). Answers are cached a week at the CDN.
-    - 12b. A tap is a line of sight, not a point: `viewer/buildings.js` sends five points along it (roof guesses
-      0-20 m above the ground, ground height from the nearest street) and the first numbered lot wins.
-    - 12c. Only zoomed in (zoom -1.5 or closer), and never when the tap hit a bus, plane, Champ or a pin, or while
-      the corrections or list cards are open. The lot is outlined and turns with the map; Escape closes.
-    - 12d. Analytics: `building_tapped` with found, town and whether a year was known; never the address.
+      requested or returned (property-tested). Answers are cached a week at the CDN; a source that is down
+      answers 503 (or marks a half answer `partial`) and is cached a minute, never shown as "nothing there".
+    - 12b. A tap hits the building you see: `viewer/buildings.json` (`pipeline/buildings.py`: 20,700 OpenStreetMap
+      footprints with heights, about 380 KB gzipped, fetched on the first tap) is walked down the line of sight
+      from the tap, and the first footprint tall enough to reach it wins (property-tested, and checked on the
+      Hilton, Decker Towers and a New North End house from all four sides). With no building in the way the
+      tap is on the ground. One point inside the building, to 5 decimals, is sent to the lookup.
+    - 12c. Condominiums are named as the building ("1 Main St"), never one unit; unnumbered lots are nothing.
+    - 12d. Only zoomed in (zoom -1.5 or closer), and never when the tap hit a bus, plane, Champ or a pin, or while
+      the corrections or list cards are open. A double-click zooms and looks nothing up. A tap while the place
+      note, layers panel or places list is open only closes it. The building's roof (or, on open ground, the lot)
+      is outlined and turns with the map; focus moves to the card; Escape closes. On a phone the card hides a
+      visitor list while it is open.
+    - 12e. Analytics: `building_tapped` with found, town, whether a year was known and whether a building was
+      hit; never the address.
     - South Burlington and Winooski have no year built in any free record reachable here; they show address and use.
 
 ## Slice 7: live buses

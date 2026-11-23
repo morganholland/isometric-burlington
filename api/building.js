@@ -2,7 +2,7 @@
 // year it was built. Never owners' names or values: only the fields named below are asked for, and only the
 // fields in `pick` are passed on.
 //
-// GET /api/building?pts=lat,lon;lat,lon;...  (points along the line of sight under the tap, best guess first)
+// GET /api/building?pts=lat,lon  (a point inside the building the tap hit, or on the ground under it)
 //
 // Sources (both public ArcGIS services, no key):
 // - City of Burlington parcels with land use and assessor information (year built, building type)
@@ -20,13 +20,16 @@ export const SOURCES = {
   },
 };
 const TIMEOUT_MS = 4000;
-const MAX_PTS = 6;
+const MAX_PTS = 1;
 const BOX = { lat: [44.35, 44.6], lon: [-73.35, -73.05] };   // the drawn area and a margin
 
 // "lat,lon;lat,lon" -> [[lat, lon]], or null if anything is off
 export function parsePoints(s) {
   if (typeof s !== 'string' || s.length > 400) return null;
-  const pts = s.split(';').filter(Boolean).map(p => p.split(',').map(Number));
+  const raw = s.split(';').filter(Boolean).map(p => p.split(','));
+  // at most 5 decimals (about a metre): finer points would only dodge the shared cache
+  if (raw.some(p => p.some(x => !/^-?\d{1,3}(\.\d{1,5})?$/.test(x)))) return null;
+  const pts = raw.map(p => p.map(Number));
   if (!pts.length || pts.length > MAX_PTS) return null;
   for (const p of pts) {
     if (p.length !== 2 || !p.every(Number.isFinite)) return null;
@@ -57,6 +60,16 @@ const KINDS = {
   'TOWNHS END': 'Townhouse', 'BED&BREAKFST': 'Bed and breakfast', 'MOTELS': 'Motel', 'ICE RINK': 'Ice rink', 'FIRE STATION': 'Fire station',
   'CONV STORE': 'Convenience store', 'SUPERMARKET': 'Supermarket', 'SMALL SHOP': 'Small shop', 'MUSEUMS': 'Museum', 'SALTBOX': 'Saltbox house',
   'MED OFFICE': 'Medical office', 'MED CLINIC': 'Clinic', 'HOTELS': 'Hotel',
+  'ARMORIES': 'Armory', 'ATHLETIC CLB': 'Athletic club', 'AUTO GARAGE': 'Auto garage', 'AUTO SALE/SE': 'Car dealership',
+  'AUTO SHOWROO': 'Car showroom', 'CAFETERIAS': 'Cafeteria', 'CARWASH-MANU': 'Car wash', 'COMM SHP CTR': 'Shopping center',
+  'COUNTRY CLB': 'Country club', 'COURTHOUSE': 'Courthouse', 'DAYCARE': 'Daycare', 'DEPT STORE': 'Department store',
+  'DOUBLE WIDE': 'Mobile home', 'ELEC GENRTR': 'Power plant', 'ENCL MALL': 'Indoor mall', 'FAST FOOD': 'Fast food restaurant',
+  'FLEX BLDG': 'Flex building', 'FRAN RETAIL': 'Chain store', 'GAS STAT MIN': 'Gas station', 'MBLE H W/LND': 'Mobile home',
+  'MINI-WHSE': 'Self-storage', 'MKTS W GAS': 'Store with gas pumps', 'MOBILE HOME': 'Mobile home', 'MOVIE CINEMA': 'Movie theater',
+  'NHBD CTR': 'Neighborhood shopping center', 'OFFICE REGNL': 'Office building', 'OTHER CONDO': 'Condominiums',
+  'PARK GARG 1S': 'Parking garage', 'PAVILIONS': 'Pavilion', 'PRK GRG UND': 'Underground parking garage',
+  'REC FACILITY': 'Recreation building', 'RES LAND': null, 'RESGARAGEAPT': 'Garage apartment', 'SEWAGE TRTMT': 'Wastewater plant',
+  'TELEPHONE BD': 'Telephone building', 'THEATER STAG': 'Theater', 'WATER TRETMT': 'Water treatment plant',
 };
 const SKIP = new Set(['', 'NULL']);
 // Burlington's land use classes, where the words need help
@@ -72,52 +85,72 @@ export function pick(src, a) {
     const kind = String(a.BuildingType || '').trim().replace(/\s+/g, ' ').toUpperCase();
     const use = String(a.LandUse || '').trim();
     return { address: [num !== '0' ? num : '', street].filter(Boolean).join(' ') || null, town: 'Burlington', built,
-      kind: SKIP.has(kind) ? null : KINDS[kind] || title(kind), use: use ? USES[use] || use : null, source: SOURCES.btv.name };
+      kind: SKIP.has(kind) ? null : kind in KINDS ? KINDS[kind] : title(kind), use: use ? USES[use] || use : null, source: SOURCES.btv.name };
   }
   return { address: a.E911ADDR ? title(a.E911ADDR) : null, town: a.TNAME ? title(a.TNAME) : null, built: null, kind: null,
     use: CATS[String(a.CAT || '').trim().toUpperCase()] || null, source: SOURCES.vt.name };
 }
 
+// "37 South Williams St Unit 122" -> "37 South Williams St": a condo building has one stacked lot per unit,
+// and the card is about the building, never one person's home
+export const stripUnit = a => a && a.replace(/\s+(unit|apt|ste|suite|#)\s*[\w-]*$/i, '').trim();
+const numbered = a => !!a && /^\d/.test(a);     // "College Pkwy" alone is a road or an unnumbered lot
+
+class SourceDown extends Error {}
+
 async function query(src, [lat, lon], fetchImpl) {
   const s = SOURCES[src];
   const q = new URLSearchParams({ geometry: `${lon},${lat}`, geometryType: 'esriGeometryPoint', inSR: '4326', spatialRel: 'esriSpatialRelIntersects',
     outFields: s.fields, returnGeometry: String(src === 'vt'), outSR: '4326', maxAllowableOffset: '0.00001', geometryPrecision: '6', f: 'json' });
-  const r = await fetchImpl(`${s.url}?${q}`, { signal: AbortSignal.timeout(TIMEOUT_MS) });
-  if (!r.ok) throw new Error(`${src} ${r.status}`);
-  const j = await r.json();
-  if (j.error) throw new Error(`${src} ${j.error.code}`);
-  const f = j.features && j.features[0];
-  if (!f) return null;
+  let j;
+  try {
+    const r = await fetchImpl(`${s.url}?${q}`, { signal: AbortSignal.timeout(TIMEOUT_MS) });
+    if (!r.ok) throw new Error(`${src} ${r.status}`);
+    j = await r.json();
+  } catch (e) { throw new SourceDown(e.message || String(e)); }
+  if (j.error) throw new SourceDown(`${src} ${j.error.code}`);
+  const fs = (j.features || []).map(f => ({ ...pick(src, f.attributes || {}), geometry: f.geometry }));
+  if (!fs.length) return null;
+  // several lots at one point: a condo's units, stacked. Name the building, not a unit.
+  const f = fs.find(x => numbered(x.address)) || fs[0];
+  const address = stripUnit(f.address);
   const ring = src === 'vt' && f.geometry && f.geometry.rings && f.geometry.rings[0];
   const outline = Array.isArray(ring) && ring.length <= 400 ? ring.map(([x, y]) => [+y.toFixed(6), +x.toFixed(6)]) : null;
-  return { ...pick(src, f.attributes || {}), outline };
+  const { geometry, ...rest } = f;
+  return { ...rest, address, outline };
 }
 
-// The first point (in the caller's order) that lands on a parcel wins. The state's parcel map gives the lot,
-// its address and outline; in Burlington the city's assessor record at the same point adds the year built and
-// building type (its own polygons are cut into pieces, so they are not used as outlines).
+// What is at a point (the viewer has already worked out which building a tap hit, and sends a point inside
+// it). The state's parcel map gives the lot, its address and outline; in Burlington the city's assessor record
+// at the same point adds the year built and building type (its own polygons are cut into pieces, so they are
+// not used as outlines). "Nothing there" and "a source is down" are told apart, so an outage is not cached.
 export async function lookup(pts, fetchImpl = fetch) {
-  const found = await Promise.all(pts.map(p => query('vt', p, fetchImpl).catch(() => null)));
-  const i = found.findIndex(f => f && f.address);   // roads, water and unnumbered lots are not buildings
-  if (i < 0) return { found: false };
-  const lot = found[i];
+  const p = pts[0];
+  const lot = await query('vt', p, fetchImpl);              // throws SourceDown
+  if (!lot || !numbered(lot.address)) return { found: false };   // roads, water and unnumbered lots are not buildings
   if (lot.town === 'Burlington') {
-    const city = await query('btv', pts[i], fetchImpl).catch(() => null);
-    if (city) return { found: true, at: i, ...lot, built: city.built, kind: city.kind, use: city.use || lot.use, source: `${SOURCES.btv.name}; ${SOURCES.vt.name}` };
+    let city = null, partial = false;
+    try { city = await query('btv', p, fetchImpl); } catch (e) { if (!(e instanceof SourceDown)) throw e; partial = true; }
+    if (city) {
+      const address = numbered(city.address) ? city.address : lot.address;
+      return { found: true, ...lot, address, built: city.built, kind: city.kind, use: city.use || lot.use, source: `${SOURCES.btv.name}; ${SOURCES.vt.name}` };
+    }
+    if (partial) return { found: true, ...lot, partial: true };
   }
-  return { found: true, at: i, ...lot };
+  return { found: true, ...lot };
 }
 
 export default async function handler(req, res) {
   const pts = parsePoints(req.query && req.query.pts);
-  if (!pts) { res.status(400).json({ found: false, error: 'pts must be 1-6 lat,lon pairs inside the map' }); return; }
+  if (!pts) { res.status(400).json({ found: false, error: 'pts must be one lat,lon pair inside the map' }); return; }
   try {
     const out = await lookup(pts);
-    res.setHeader('Cache-Control', 's-maxage=604800, stale-while-revalidate=86400');   // records change yearly
+    // records change yearly; an answer missing a source that was down is kept only briefly
+    res.setHeader('Cache-Control', out.partial ? 's-maxage=60' : 's-maxage=604800, stale-while-revalidate=86400');
     res.status(200).json(out);
   } catch (e) {
     console.error('building:', e.message || e);
     res.setHeader('Cache-Control', 's-maxage=60');
-    res.status(200).json({ found: false, error: 'lookup failed' });
+    res.status(503).json({ found: false, error: 'lookup failed' });
   }
 }
