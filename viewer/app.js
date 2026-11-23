@@ -10,6 +10,7 @@ import { CarLayer } from './traffic.js';
 import { LightLayer, litShare } from './lights.js';
 import { burlingtonClock } from './transit.js';
 import { correction } from './fix.js';
+import { groundU, rayPoints, describeBuilding } from './buildings.js';
 import { encodeList, decodeList, LINK_MAX } from './lists.js';
 import { viewHash, readViewHash, readList, listAngle, readMoment, shareLink, snapshot, deliver } from './share.js';
 import { MomentLayer, groundSnow, fetchSnowDepth, FW_SITE, CHAMP_SPOTS } from './moments.js';
@@ -90,6 +91,7 @@ function showAngle(a, centerPx, zoom) {
   cars.aim();
   if (places.list.length) drawPlaces();
   drawVisitorPins();
+  drawBuildingOutline();
   saveHash();
 }
 
@@ -186,7 +188,7 @@ function drawPlaces() {
   labels.draw();
 }
 function openPlace(i, via, opener) {
-  hideFix();
+  hideFix(); closeBuilding();
   const p = places.list[i];
   places.open = i;
   places.opener = opener || null;
@@ -333,7 +335,7 @@ const mk = { items: [] };
 function showMaker(open) {
   if (!open) { $('#mklist').hidden = true; if ($('#fix').hidden) $('#fix-aim').hidden = true; if (vlist.list) $('#vlist').hidden = false; return; }
   $('#vlist').hidden = true;                    // a list being viewed comes back when the maker closes
-  hideFix(); showAbout(false); closePlace(); closePlacesList();
+  hideFix(); showAbout(false); closePlace(); closePlacesList(); closeBuilding();
   $('#layers').hidden = true; $('#layers-btn').setAttribute('aria-expanded', 'false');
   $('#hint').hidden = true;
   $('#mklist').hidden = $('#fix-aim').hidden = false;
@@ -413,6 +415,7 @@ fetch('labels.json').then(r => r.ok ? r.json() : Promise.reject(new Error(`label
   labels.skip = new Set((d.places || []).map(p => p[0]));
   labels.use(d);
   moments.useStreets(d.streets || []);
+  streetPts = (d.streets || []).flatMap(s => s[2]);
   if (d.places) setupPlaces(d);
 }).catch(() => { labels.data = null; });
 const buses = new BusLayer($('#buses'), map, toLL, () => state.angle, (x, y) => inRegion(state.angle, x, y));
@@ -453,6 +456,55 @@ map.on('click', e => { if (moments.on && moments.hit(e.containerPoint.x, e.conta
 buses.onFrame = moments.onFrame = () => { if (tipAt && !$('#bus-tip').hidden) showTip(); };
 map.on('mousemove', busTip);
 map.on('click', busTip);
+
+// ---------- tap a building: its public record (address, use, year built in Burlington; never owners or values) ----------
+let streetPts = [];
+const bldg = { seq: 0, outline: null, h: 0, layer: null };
+function closeBuilding() {
+  bldg.seq++; bldg.outline = null;
+  if (bldg.layer) { map.removeLayer(bldg.layer); bldg.layer = null; }
+  $('#bldg').hidden = true;
+}
+function drawBuildingOutline() {
+  if (bldg.layer) { map.removeLayer(bldg.layer); bldg.layer = null; }
+  if (!bldg.outline) return;
+  bldg.layer = L.polygon(bldg.outline.map(([lat, lon]) => toLL(...latLonToPx(state.angle, lat, lon, bldg.h))), { className: 'bldg-outline', interactive: false }).addTo(map);
+}
+async function openBuilding(cx, cy) {
+  const [x, y] = toPx(map.containerPointToLatLng([cx, cy]));
+  if (!inRegion(state.angle, x, y)) return;
+  const pts = rayPoints(state.angle, x, y, groundU(state.angle, x, y, streetPts));
+  const seq = ++bldg.seq;
+  hideFix(); closePlace(); closePlacesList();
+  $('#bldg-title').textContent = 'Looking it up…';
+  for (const c of ['town', 'line', 'use', 'src']) $(`#bldg .bldg-${c}`).textContent = '';
+  $('#bldg').hidden = false;
+  let r = null;
+  try {
+    const q = pts.map(([lat, lon]) => `${lat},${lon}`).join(';');
+    const res = await fetch(`/api/building?pts=${encodeURIComponent(q)}`);
+    r = res.ok ? await res.json() : null;
+  } catch { r = null; }
+  if (seq !== bldg.seq) return;                  // another tap, or closed, while this one was out
+  const card = describeBuilding(r);
+  track('building_tapped', { found: !!card, town: card ? card.town : null, built: !!(card && r.built) });
+  if (!card) { closeBuilding(); toast('No public record for that spot'); return; }
+  $('#bldg-title').textContent = card.title;
+  $('#bldg .bldg-town').textContent = card.town;
+  $('#bldg .bldg-line').textContent = card.line || '';
+  $('#bldg .bldg-use').textContent = card.use || '';
+  $('#bldg .bldg-src').textContent = `From ${card.source}. Owners and values are left out on purpose.`;
+  bldg.outline = r.outline || null; bldg.h = pts[1][2];   // outlines sit on the ground
+  drawBuildingOutline();
+}
+$('#bldg-close').addEventListener('click', () => { closeBuilding(); $('#map').focus(); });
+map.on('click', e => {
+  const { x, y } = e.containerPoint;
+  // only close enough in to tell buildings apart, and not when the tap meant something else
+  if (map.getZoom() < -1.5 || !$('#mklist').hidden || !$('#fix').hidden) return;
+  if ((planes.on && planes.hit(x, y)) || (moments.on && moments.hit(x, y)) || (buses.on && buses.data && buses.hit(x, y))) return;
+  openBuilding(x, y);
+});
 map.on('mouseout', () => { tipAt = null; $('#bus-tip').hidden = true; });
 map.on('movestart zoomstart', () => { tipAt = null; $('#bus-tip').hidden = true; });
 $('#show-labels').addEventListener('change', e => { labels.on = e.target.checked; labels.draw(); });
@@ -586,7 +638,7 @@ $('#about-close').addEventListener('click', () => { showAbout(false); $('#about-
 function hideFix() { $('#fix').hidden = true; if ($('#mklist').hidden) $('#fix-aim').hidden = true; }
 function showFix(open) {
   if (!open) { hideFix(); return; }
-  showMaker(false); showAbout(false); closePlace(); closePlacesList();
+  showMaker(false); showAbout(false); closePlace(); closePlacesList(); closeBuilding();
   $('#layers').hidden = true; $('#layers-btn').setAttribute('aria-expanded', 'false');
   $('#hint').hidden = true;                 // out of the way for now; it may still show on a later visit
   $('#fix').hidden = $('#fix-aim').hidden = false;
@@ -611,6 +663,7 @@ $('#fix-form').addEventListener('submit', e => {
 
 addEventListener('keydown', e => {
   if (e.key === 'Escape' && !$('#place').hidden) { closePlace(); return; }
+  if (e.key === 'Escape' && !$('#bldg').hidden) { closeBuilding(); return; }
   if (e.key === 'Escape' && !$('#mklist').hidden) { showMaker(false); $('#places-btn').focus(); return; }
   if (e.key === 'Escape' && !$('#fix').hidden) { showFix(false); $('#about-btn').focus(); return; }
   if (e.key === 'Escape' && !$('#about').hidden) { showAbout(false); $('#about-btn').focus(); return; }

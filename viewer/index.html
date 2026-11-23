@@ -85,6 +85,7 @@
     <li><b>Turn the city:</b> <b>⟲ ⟳</b> (or the <kbd>[</kbd> <kbd>]</kbd> keys) show it from all four sides.</li>
     <li><b>Find a place:</b> search any street, address or landmark at the top.</li>
     <li><b>Buses, the train and planes:</b> hover or tap one to see its route, run or flight.</li>
+    <li><b>Tap a building</b> (zoomed in) for its address and, in Burlington, the year it was built. Public records only: never owners or values.</li>
     <li><b>Keep an eye on the lake:</b> Champ surfaces now and then.</li>
     <li><b>★</b> lists places worth a look, each with a short note. Tap a pin on the map to read one. You can also make your own list there and share it as a link.</li>
     <li><b>◐</b> switches time of day, weather, names, cars, buses, the train and planes.</li>
@@ -151,6 +152,16 @@
   <button id="place-close" class="about-close" type="button" aria-label="Close">×</button>
   <h2 id="place-title"></h2>
   <p></p>
+</section>
+
+<section id="bldg" class="card place-card bldg-card" role="dialog" aria-modal="false" aria-labelledby="bldg-title" aria-live="polite" hidden>
+  <button id="bldg-close" class="about-close" type="button" aria-label="Close">×</button>
+  <p class="eyebrow">Public record</p>
+  <h2 id="bldg-title"></h2>
+  <p class="bldg-town"></p>
+  <p class="bldg-line"></p>
+  <p class="bldg-use"></p>
+  <p class="bldg-src"></p>
 </section>
 
 <section id="layers" class="card panel" hidden>

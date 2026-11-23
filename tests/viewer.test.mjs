@@ -115,6 +115,53 @@ test('phone: nothing overflows and controls are reachable', async () => {
   await ctx.close();
 });
 
+test('tap a building: its public record, outlined, with no owners or values', async () => {
+  const { ctx, page, errors } = await open({ viewport: { width: 1280, height: 820 } });
+  const asked = [];
+  await page.route('**/api/building**', r => {
+    asked.push(new URL(r.request().url()).searchParams.get('pts'));
+    r.fulfill({ json: { found: true, at: 0, address: '81 Church St', town: 'Burlington', built: 1899, kind: 'Office building', use: 'Commercial',
+      source: 'City of Burlington assessor', outline: [[44.4777, -73.2127], [44.4777, -73.2131], [44.4780, -73.2131], [44.4780, -73.2127], [44.4777, -73.2127]] } });
+  });
+  await page.evaluate(() => window.__iso.goTo(44.4780, -73.2128, 'Church Street'));
+  await page.waitForTimeout(1500);
+  // zoomed right out, a tap is just a tap
+  await page.evaluate(() => window.__iso.map.setZoom(-3, { animate: false }));
+  await page.mouse.click(700, 420);
+  await page.waitForTimeout(300);
+  assert.ok(await page.isHidden('#bldg')); assert.equal(asked.length, 0);
+  await page.evaluate(() => window.__iso.map.setZoom(0, { animate: false }));
+  await page.waitForTimeout(300);
+  await page.mouse.click(700, 420);
+  await page.waitForSelector('#bldg:not([hidden])');
+  await page.waitForFunction(() => document.querySelector('#bldg-title').textContent === '81 Church St');
+  assert.equal(await page.textContent('#bldg .bldg-line'), 'Office building, built 1899');
+  assert.match(await page.textContent('#bldg .bldg-src'), /Owners and values are left out/);
+  assert.equal(asked.length, 1);
+  const pts = asked[0].split(';').map(p => p.split(',').map(Number));
+  assert.equal(pts.length, 5, 'points along the line of sight');
+  for (const [lat, lon] of pts) assert.ok(Math.abs(lat - 44.478) < 0.01 && Math.abs(lon + 73.2128) < 0.01, `${lat},${lon} near the tap`);
+  assert.equal(await page.locator('path.bldg-outline').count(), 1, 'the lot is outlined');
+  // the outline turns with the map
+  const before = await page.locator('path.bldg-outline').getAttribute('d');
+  await page.evaluate(() => window.__iso.rotate(1));
+  await page.waitForTimeout(300);
+  assert.notEqual(await page.locator('path.bldg-outline').getAttribute('d'), before);
+  const ev = await page.evaluate(() => window.__isoEvents.filter(e => e.event === 'building_tapped').map(e => e.props));
+  assert.deepEqual(ev, [{ found: true, town: 'Burlington', built: true }], 'never the address');
+  await page.keyboard.press('Escape');
+  assert.ok(await page.isHidden('#bldg'));
+  assert.equal(await page.locator('path.bldg-outline').count(), 0);
+  // nothing on record: a short note, no card
+  await page.unroute('**/api/building**');
+  await page.route('**/api/building**', r => r.fulfill({ json: { found: false } }));
+  await page.mouse.click(640, 400);
+  await page.waitForFunction(() => /No public record/.test(document.querySelector('#toast').textContent));
+  assert.ok(await page.isHidden('#bldg'));
+  assert.deepEqual(errors, []);
+  await ctx.close();
+});
+
 test('the Amtrak train parks at Union Station overnight and says so', async () => {
   const { ctx, page, errors } = await open({ viewport: { width: 1400, height: 880 } });
   await page.waitForFunction(() => window.__iso.buses.data);

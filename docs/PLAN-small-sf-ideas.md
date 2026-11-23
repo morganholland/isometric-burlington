@@ -9,7 +9,8 @@
 - Slice 2 (About page: numbers, change log, drag-to-compare): live since 2026-11-23 (PR #5).
 - Slice 3 (corrections): live since 2026-11-23 (PR #6); notes collect in the PostHog insight "Map corrections from visitors".
 - Slice 4 (visitor lists): live since 2026-11-23 (PR #7).
-- Slice 5 (the train): built and tested, in its own PR.
+- Slice 5 (the train): live since 2026-11-23 (PR #8).
+- Slice 6 (tap a building): built and tested, in its own PR.
 - Slice 7 (live buses) waits on a free Swiftly key only Morgan can request: see `OWED.md`.
 - Rules: spend nothing, free feeds only, never cap zoom, say plainly on the site what is simulated or timetabled.
 
@@ -64,6 +65,15 @@ Each slice is its own small pull request, merged when its tests are green and it
 ## Slice 6: click a building
 12. Tapping a building shows its address, year built and use where public records have them (City of
     Burlington assessor data; OpenStreetMap elsewhere). Never owners' names or values.
+    - 12a. `api/building.js` asks VCGI's statewide parcels for the lot (address, town, category, outline) and, in
+      Burlington, the city's assessor layer for year built and building type. Only whitelisted fields are
+      requested or returned (property-tested). Answers are cached a week at the CDN.
+    - 12b. A tap is a line of sight, not a point: `viewer/buildings.js` sends five points along it (roof guesses
+      0-20 m above the ground, ground height from the nearest street) and the first numbered lot wins.
+    - 12c. Only zoomed in (zoom -1.5 or closer), and never when the tap hit a bus, plane, Champ or a pin, or while
+      the corrections or list cards are open. The lot is outlined and turns with the map; Escape closes.
+    - 12d. Analytics: `building_tapped` with found, town and whether a year was known; never the address.
+    - South Burlington and Winooski have no year built in any free record reachable here; they show address and use.
 
 ## Slice 7: live buses
 13. With a free Swiftly key for GMT's live feed (only Morgan can request it), buses move by GPS and the label
