@@ -48,3 +48,16 @@
   rush hour, snapshot) fail in that mode on main too; CI builds without tiles, so run the suite that way.
 - Open-Meteo's free API is limited per address per day and the cloud container's address is often over it.
   Tests answer for it with `page.route`.
+
+## The About page's before-and-after picture
+- The raw Google renders are public on the tile bucket at `renders/a<angle>/<bx>_<by>.png` (4096 px blocks),
+  and level-0 tiles `map-v1/a<angle>/0/<tx>/<ty>.webp` are 512 px, so tile (bx/512 + i, by/512 + j) is the same
+  pixels drawn. A pair lines up exactly with no warping: crop both the same, scale both the same.
+- An invisible `<input type=range>` stretched over a picture is not a touch slider: iOS only moves a range by
+  its thumb, and Chrome snaps the value to wherever a finger lands, so scrolling past moves the cut. Keep the
+  range for keyboard and screen readers (`pointer-events:none`), drive dragging with Pointer Events on the frame,
+  `touch-action: pan-y`, and start a touch drag only once sideways movement wins.
+- Real touch in a Playwright test: `ctx.newCDPSession(page)` and `Input.dispatchTouchEvent` start/move/end in
+  an iPhone device context; this produces both pointer events and native page scrolling.
+- Test the cut by what is drawn (computed `clip-path`, knob position), not the CSS variable the script writes.
+- Numbers on a page drift from the data: test them by recomputing from the same files the map uses.
