@@ -1,0 +1,21 @@
+{
+  "type": "hires_trial",
+  "name": "hires-trial-1",
+  "angle": 0,
+  "pixel_m": 0.115,
+  "render_size": 2048,
+  "model": "gpt-image-2.6-sunburst",
+  "look": "builder_hires",
+  "quality": "high",
+  "sizes": ["2048x2048", "2880x2880"],
+  "seam_size": "2880x2880",
+  "overlap_frac": 0.2,
+  "max_calls": 15,
+  "spots": [
+    {"id": "church-st", "label": "Church Street Marketplace", "lat": 44.4780, "lon": -73.2127, "h": 35},
+    {"id": "waterfront", "label": "Waterfront Park & Marina", "lat": 44.4775, "lon": -73.2205, "h": 2},
+    {"id": "city-hall", "label": "City Hall Park & Main Street", "lat": 44.4765, "lon": -73.2134, "h": 30},
+    {"id": "winooski", "label": "Winooski Rotary & Champlain Mill", "lat": 44.4910, "lon": -73.1858, "h": 27}
+  ],
+  "seam_center": {"label": "Downtown & City Hall Park (2x2 stitch)", "lat": 44.4772, "lon": -73.2131, "h": 33}
+}

@@ -10,7 +10,7 @@ import { fileURLToPath } from 'node:url';
 const HERE = path.dirname(fileURLToPath(import.meta.url));
 const ROOT = path.resolve(HERE, '../..');
 
-export async function openRenderer({ token, gpu = process.env.RENDER_GPU === '1', errorTarget, warmup = true } = {}) {
+export async function openRenderer({ token, gpu = process.env.RENDER_GPU === '1', errorTarget, warmup = true, pixelM } = {}) {
   const args = gpu
     ? ['--use-angle=vulkan', '--enable-features=Vulkan', '--ignore-gpu-blocklist', '--enable-gpu-rasterization']
     : ['--use-angle=swiftshader', '--enable-unsafe-swiftshader', '--ignore-gpu-blocklist'];
@@ -28,6 +28,7 @@ export async function openRenderer({ token, gpu = process.env.RENDER_GPU === '1'
   await page.waitForFunction(() => typeof window.setup === 'function');
   const cfg = JSON.parse(fs.readFileSync(path.join(ROOT, 'data/grid.json')));
   delete cfg.angles; // the page only needs the camera constants
+  if (pixelM) cfg.pixel_m = Number(pixelM);
   await page.evaluate(([c, t, o]) => window.setup(c, t, o), [cfg, token, { errorTarget, warmup }]);
   return { browser, page };
 }
@@ -43,9 +44,10 @@ async function main() {
   const token = process.env.CESIUM_ION_TOKEN;
   if (!token) throw new Error('CESIUM_ION_TOKEN is not set');
   const angle = Number(argv.angle ?? 0), size = Number(argv.size ?? 2048);
+  const pixelM = argv.pixelM ? Number(argv.pixelM) : undefined;
   const frames = JSON.parse(fs.readFileSync(argv.frames));
   const out = argv.out; fs.mkdirSync(out, { recursive: true });
-  const { browser, page } = await openRenderer({ token, errorTarget: argv.errorTarget ? Number(argv.errorTarget) : undefined });
+  const { browser, page } = await openRenderer({ token, errorTarget: argv.errorTarget ? Number(argv.errorTarget) : undefined, pixelM });
   // one pass over every frame, then one retry pass over frames that did not fully load
   let todo = frames;
   for (let pass = 0; pass < 2 && todo.length; pass++) {

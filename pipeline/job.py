@@ -829,6 +829,11 @@ def run_draw(job, out, log):
     return {"state": result, "vast_spent_estimate": round(spent, 2)}
 
 
+def run_hires_trial(job, out, log):
+    import hires_trial
+    return hires_trial.run_hires_trial(job, out, log, job_start=JOB_START)
+
+
 def main(path):
     job = json.loads(Path(path).read_text())
     name = job["name"]
@@ -839,7 +844,7 @@ def main(path):
     r2.put_json(f"runs/{name}/status.json", status)
     log = open(out / "log.txt", "w")
     try:
-        result = {"render": run_render, "probe": run_probe, "teacher_test": run_teacher_test, "teacher_set": run_teacher_set, "train": run_train, "render_blocks": run_render_blocks, "ls": run_ls, "draw": run_draw, "tiles": run_tiles, "scan_renders": run_scan_renders, "scan_lake": run_scan_lake, "transit_heights": run_transit_heights}[job["type"]](job, out, log)
+        result = {"render": run_render, "probe": run_probe, "teacher_test": run_teacher_test, "teacher_set": run_teacher_set, "train": run_train, "render_blocks": run_render_blocks, "ls": run_ls, "draw": run_draw, "tiles": run_tiles, "scan_renders": run_scan_renders, "scan_lake": run_scan_lake, "transit_heights": run_transit_heights, "hires_trial": run_hires_trial}[job["type"]](job, out, log)
         status.update(state="done", result=result)
     except Exception:
         status.update(state="failed", error=traceback.format_exc()[-3000:])

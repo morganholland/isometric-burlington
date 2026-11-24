@@ -32,7 +32,24 @@ STYLES = {
         "calm painted colour with a few light strokes and grass and trees in natural, muted greens. Do not write any "
         "letters, numbers, logos or signs."
     ),
+    "builder_hires": (
+        "Redraw the first image as an ultra-crisp, finely detailed isometric city illustration in the spirit of a "
+        "hand-crafted architectural city map. Fidelity comes first: every building, roof, road, crosswalk, path, "
+        "tree, boat, shoreline and shadow stays in its exact position, size and footprint. Add nothing and remove "
+        "nothing. Do not move, crop, zoom, rotate or re-frame anything. "
+        "Turn Google 3D scan artifacts into crisp illustration detail: replace melted or blobby parked cars with "
+        "tidy, sharp little cars in the same spots and colours; replace blobby foliage with distinct, layered leafy "
+        "trees; draw crisp windows, roof tiles, porches, chimneys, rooftop vents and brick facades with clean dark "
+        "ink outlines, flat bright daylight colour and subtle two-tone shading. Draw lake water as smooth deep blue "
+        "with subtle ripple lines, and grass and trees in natural New England greens. Do not write readable text, "
+        "numbers, logos or signs."
+    ),
 }
+
+STYLE_REF_NOTE = (
+    " Match the exact illustration style, ink line weight, colour palette, shading and level of detail of the "
+    "second image (style reference), while strictly preserving the layout and geometry of the first image."
+)
 
 
 class NotBilled(RuntimeError):
@@ -43,10 +60,31 @@ class OutOfQuota(NotBilled):
     """The OpenAI account has no credit left: no later call will work either."""
 
 
-def call_openai(model, render_png, prompt, quality="high", size="1024x1024", retries=6, timeout=600, deadline=None):
+def estimate_cost(usage):
+    """Estimate OpenAI USD spend from an Images API usage object ($5/M text in, $8/M image in, $30/M image out)."""
+    if not isinstance(usage, dict):
+        return 0.0
+    det = usage.get("input_tokens_details") or {}
+    txt_in = det.get("text_tokens", 0) or 0
+    img_in = det.get("image_tokens", 0) or 0
+    if not txt_in and not img_in and usage.get("input_tokens"):
+        img_in = usage["input_tokens"]
+    out_tok = usage.get("output_tokens", 0) or 0
+    return (txt_in * 5.0 + img_in * 8.0 + out_tok * 30.0) / 1_000_000.0
+
+
+def call_openai(model, render_png, prompt, quality="high", size="1024x1024", retries=6, timeout=600, deadline=None, style_ref_png=None):
     """deadline: epoch seconds; no wait or request is started that could run past it."""
-    data = {"model": model, "prompt": prompt, "size": size, "quality": quality, "n": "1",
+    full_prompt = prompt + STYLE_REF_NOTE if style_ref_png else prompt
+    data = {"model": model, "prompt": full_prompt, "size": size, "quality": quality, "n": "1",
             "input_fidelity": "high", "output_format": "png"}
+    if style_ref_png:
+        files = [
+            ("image[]", ("render.png", render_png, "image/png")),
+            ("image[]", ("style.png", style_ref_png, "image/png")),
+        ]
+    else:
+        files = {"image": ("render.png", render_png, "image/png")}
     r = None
     for attempt in range(retries):
         left = (deadline - time.time()) if deadline else timeout
@@ -54,7 +92,7 @@ def call_openai(model, render_png, prompt, quality="high", size="1024x1024", ret
             raise NotBilled("out of time before the request was sent")
         r = requests.post("https://api.openai.com/v1/images/edits",
                           headers={"Authorization": f"Bearer {os.environ['OPENAI_API_KEY']}"},
-                          files={"image": ("render.png", render_png, "image/png")}, data=data, timeout=min(timeout, left))
+                          files=files, data=data, timeout=min(timeout, left))
         if r.status_code == 400 and "input_fidelity" in r.text and "input_fidelity" in data:   # model without that option
             data.pop("input_fidelity"); continue
         if r.ok:
